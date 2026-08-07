@@ -1,0 +1,289 @@
+/* Tailwind CSS Directives */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ==========================================
+   CSS CUSTOM PROPERTIES & DESIGN TOKENS
+   ========================================== */
+:root {
+  --color-primary: #0F3D87;
+  --color-primary-dark: #0A2656;
+  --color-primary-light: #1D5BBF;
+  --color-accent-gold: #FFB800;
+  --color-accent-cyan: #00D2FF;
+  --gradient-blue: linear-gradient(135deg, #0F3D87 0%, #1D5BBF 50%, #2563EB 100%);
+  --gradient-dark: linear-gradient(135deg, #0F172A 0%, #1E293B 100%);
+  --gradient-rainbow: linear-gradient(90deg, #FF0055 0%, #FFB800 25%, #00E676 50%, #00B0FF 75%, #7C4DFF 100%);
+  --shadow-blue: 0 20px 60px -10px rgba(15, 61, 135, 0.4);
+  --shadow-card: 0 4px 24px rgba(15, 61, 135, 0.08);
+}
+
+/* ==========================================
+   GLOBAL BASE STYLES
+   ========================================== */
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  background-color: #F8FAFC;
+  color: #1E293B;
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: 'Outfit', 'Plus Jakarta Sans', sans-serif;
+  letter-spacing: -0.02em;
+}
+
+/* ==========================================
+   CUSTOM SCROLLBAR
+   ========================================== */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: #F1F5F9; }
+::-webkit-scrollbar-thumb { background: #CBD5E1; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #0F3D87; }
+
+/* ==========================================
+   UTILITY CLASSES (NON-TAILWIND)
+   ========================================== */
+.rainbow-text {
+  background: var(--gradient-rainbow);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.glass-card {
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  box-shadow: var(--shadow-card);
+}
+
+.glass-card-dark {
+  background: rgba(15, 23, 42, 0.80);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+/* ==========================================
+   GRADIENT BACKGROUNDS
+   ========================================== */
+.bg-hero-paints {
+  background: linear-gradient(135deg, #060E1F 0%, #0A1929 30%, #0F3D87 100%);
+  position: relative;
+}
+
+.bg-hero-interiors {
+  background: linear-gradient(135deg, #060E1F 0%, #1A0A00 50%, #3D1F00 100%);
+  position: relative;
+}
+
+/* ==========================================
+   PREMIUM BUTTON STYLES
+   ========================================== */
+.btn-blue-gradient {
+  background: linear-gradient(135deg, #1D5BBF 0%, #0F3D87 100%);
+  color: white;
+  font-weight: 700;
+  border: none;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  box-shadow: 0 8px 30px rgba(15, 61, 135, 0.35);
+}
+
+.btn-blue-gradient:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 40px rgba(15, 61, 135, 0.5);
+}
+
+.btn-gold {
+  background: linear-gradient(135deg, #FFB800 0%, #FF8C00 100%);
+  color: #0A1929;
+  font-weight: 800;
+  border: none;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  box-shadow: 0 8px 30px rgba(255, 184, 0, 0.35);
+}
+
+.btn-gold:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 40px rgba(255, 184, 0, 0.5);
+}
+
+/* ==========================================
+   ANIMATED GRADIENT BLOBS
+   ========================================== */
+.gradient-blob {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(80px);
+  pointer-events: none;
+  animation: blob-pulse 8s ease-in-out infinite;
+}
+
+@keyframes blob-pulse {
+  0%, 100% { transform: scale(1) translate(0, 0); opacity: 0.6; }
+  33% { transform: scale(1.1) translate(20px, -20px); opacity: 0.8; }
+  66% { transform: scale(0.9) translate(-20px, 20px); opacity: 0.5; }
+}
+
+/* ==========================================
+   RAINBOW ACCENT LINE
+   ========================================== */
+.rainbow-line {
+  height: 3px;
+  background: var(--gradient-rainbow);
+  border-radius: 999px;
+}
+
+/* ==========================================
+   STAT COUNTER CARD
+   ========================================== */
+.stat-card {
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(10px);
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 16px;
+  padding: 20px;
+  transition: all 0.3s ease;
+}
+
+.stat-card:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.2);
+  transform: translateY(-3px);
+}
+
+/* ==========================================
+   CARD HOVER EFFECTS
+   ========================================== */
+.product-card {
+  transition: all 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+  cursor: pointer;
+}
+
+.product-card:hover {
+  transform: translateY(-8px);
+  box-shadow: 0 24px 50px rgba(15, 61, 135, 0.15);
+}
+
+/* ==========================================
+   ANT DESIGN OVERRIDES
+   ========================================== */
+.ant-btn-primary {
+  background: linear-gradient(135deg, #1D5BBF 0%, #0F3D87 100%) !important;
+  border: none !important;
+  box-shadow: 0 4px 15px rgba(15, 61, 135, 0.3) !important;
+  font-weight: 700 !important;
+}
+
+.ant-btn-primary:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 8px 25px rgba(15, 61, 135, 0.4) !important;
+}
+
+.ant-card {
+  border-radius: 20px !important;
+  box-shadow: 0 4px 24px rgba(0,0,0,0.06) !important;
+  border: 1px solid #F1F5F9 !important;
+}
+
+.ant-table-wrapper .ant-table {
+  border-radius: 16px !important;
+  overflow: hidden;
+}
+
+.ant-table-thead > tr > th {
+  background: #F8FAFC !important;
+  font-weight: 700 !important;
+  font-size: 11px !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.05em !important;
+  color: #64748B !important;
+  border-bottom: 2px solid #E2E8F0 !important;
+}
+
+.ant-modal-content {
+  border-radius: 24px !important;
+  overflow: hidden;
+  box-shadow: 0 40px 80px rgba(0, 0, 0, 0.2) !important;
+}
+
+.ant-modal-header {
+  border-radius: 24px 24px 0 0 !important;
+  padding: 20px 24px !important;
+  border-bottom: 1px solid #F1F5F9 !important;
+}
+
+.ant-form-item-label > label {
+  font-weight: 600 !important;
+  font-size: 12px !important;
+  color: #374151 !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.04em !important;
+}
+
+.ant-input, .ant-input-affix-wrapper, .ant-select-selector {
+  border-radius: 10px !important;
+  border: 1.5px solid #E2E8F0 !important;
+}
+
+.ant-input:focus, .ant-input-affix-wrapper:focus {
+  border-color: #1D5BBF !important;
+  box-shadow: 0 0 0 3px rgba(29, 91, 191, 0.12) !important;
+}
+
+.ant-tag {
+  border-radius: 6px !important;
+  font-weight: 600 !important;
+  font-size: 11px !important;
+}
+
+/* ==========================================
+   BEFORE/AFTER SLIDER
+   ========================================== */
+.before-after-container {
+  position: relative;
+  overflow: hidden;
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: ew-resize;
+}
+
+/* ==========================================
+   SHIMMER LOADING
+   ========================================== */
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.shimmer {
+  background: linear-gradient(90deg, #F0F4F8 25%, #E2E8F0 50%, #F0F4F8 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+}
+
+/* ==========================================
+   PRINT STYLES FOR REPORTS
+   ========================================== */
+@media print {
+  .no-print { display: none !important; }
+  body { background: white !important; }
+  .ant-card { box-shadow: none !important; border: 1px solid #ddd !important; }
+}

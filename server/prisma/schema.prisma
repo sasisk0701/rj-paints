@@ -1,0 +1,168 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum Role {
+  ADMIN
+}
+
+enum BusinessType {
+  PAINTS
+  INTERIORS
+  BOTH
+}
+
+model AdminUser {
+  id        String    @id @default(uuid())
+  email     String    @unique
+  password  String
+  name      String
+  role      Role      @default(ADMIN)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+}
+
+model Product {
+  id            String       @id @default(uuid())
+  name          String
+  category      String
+  brand         String
+  sku           String       @unique
+  barcode       String       @unique
+  description   String?
+  purchasePrice Float
+  sellingPrice  Float
+  gstRate       Float        @default(18.0)
+  stock         Int          @default(0)
+  minStock      Int          @default(5)
+  unit          String       @default("Liter")
+  image         String?
+  business      BusinessType @default(PAINTS)
+  status        String       @default("In Stock")
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+  deletedAt     DateTime?
+
+  stockInItems  StockInItem[]
+  stockOutItems StockOutItem[]
+}
+
+model Supplier {
+  id                 String    @id @default(uuid())
+  name               String
+  gstNumber          String    @unique
+  phone              String
+  email              String?
+  address            String?
+  city               String
+  outstandingBalance Float     @default(0.0)
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+  deletedAt          DateTime?
+
+  stockInRecords     StockInRecord[]
+}
+
+model StockInRecord {
+  id           String        @id @default(uuid())
+  invoiceNo    String        @unique
+  supplierId   String
+  supplier     Supplier      @relation(fields: [supplierId], references: [id])
+  purchaseDate DateTime
+  subtotal     Float
+  totalGst     Float
+  grandTotal   Float
+  paymentMode  String
+  notes        String?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  items        StockInItem[]
+}
+
+model StockInItem {
+  id            String        @id @default(uuid())
+  stockInId     String
+  stockInRecord StockInRecord @relation(fields: [stockInId], references: [id], onDelete: Cascade)
+  productId     String
+  product       Product       @relation(fields: [productId], references: [id])
+  quantity      Int
+  purchasePrice Float
+  gstRate       Float
+  total         Float
+}
+
+model StockOutRecord {
+  id            String         @id @default(uuid())
+  invoiceNo     String         @unique
+  customerName  String
+  customerPhone String
+  saleDate      DateTime
+  subtotal      Float
+  discountTotal Float          @default(0.0)
+  totalGst      Float
+  grandTotal    Float
+  paymentMode   String
+  notes         String?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  items         StockOutItem[]
+}
+
+model StockOutItem {
+  id             String         @id @default(uuid())
+  stockOutId     String
+  stockOutRecord StockOutRecord @relation(fields: [stockOutId], references: [id], onDelete: Cascade)
+  productId      String
+  product        Product        @relation(fields: [productId], references: [id])
+  quantity       Int
+  sellingPrice   Float
+  discount       Float          @default(0.0)
+  gstRate        Float
+  total          Float
+}
+
+model LabourPayment {
+  id           String   @id @default(uuid())
+  name         String
+  phone        String
+  siteLocation String
+  description  String
+  amount       Float
+  paymentMode  String
+  paymentDate  DateTime
+  remarks      String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model Expense {
+  id          String   @id @default(uuid())
+  category    String
+  title       String
+  amount      Float
+  paymentMode String
+  expenseDate DateTime
+  remarks     String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model BankAccount {
+  id             String   @id @default(uuid())
+  accountName    String
+  bankName       String
+  accountNumber  String
+  ifscCode       String
+  currentBalance Float
+  type           String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}
