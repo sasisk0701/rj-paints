@@ -31,7 +31,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         id: 'admin-01',
         email: 'rjpaintsandhardwares@gmail.com',
         role: 'admin',
-        name: 'S. Madasamy (Owner & Director)'
+        name: 'S. Madasamy'
       };
       
       // Generate a mock JWT token signature

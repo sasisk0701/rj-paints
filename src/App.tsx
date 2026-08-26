@@ -32,6 +32,30 @@ import { AdminExpenses } from './pages/admin/AdminExpenses';
 import { AdminBank } from './pages/admin/AdminBank';
 import { AdminReports } from './pages/admin/AdminReports';
 import { AdminSettings } from './pages/admin/AdminSettings';
+import { ToggleProvider } from './context/ToggleContext';
+
+import AppShell from './pages/admin/AppShell.tsx';
+
+import Dashboard from './pages/admin/Dashboard.tsx';
+import Products from './pages/admin/Products.tsx';
+import Categories from './pages/admin/Categories.tsx';
+import StockOverview from './pages/admin/StockOverview.tsx';
+import StockIn from './pages/admin/StockIn.tsx';
+import StockOut from './pages/admin/StockOut.tsx';
+import StockMaintenance from './pages/admin/StockMaintenance.tsx';
+import Purchases from './pages/admin/Purchases.tsx';
+import Sales from './pages/admin/Sales.tsx';
+import Customers from './pages/admin/Customers.tsx';
+import Suppliers from './pages/admin/Suppliers.tsx';
+import Bank from './pages/admin/Bank.tsx';
+import Cash from './pages/admin/Cash.tsx';
+import Payments from './pages/admin/Payments.tsx';
+import Expenses from './pages/admin/Expenses.tsx';
+import Reports from './pages/admin/Reports.tsx';
+import UsersPage from "./pages/admin/Users.tsx";
+import Settings from './pages/admin/Settings.tsx';
+import ActivityLog from './pages/admin/ActivityLog.tsx';
+
 
 // Dynamic Home Selector Component
 const DynamicHomePage: React.FC = () => {
@@ -65,6 +89,7 @@ export const App: React.FC = () => {
   return (
     <AuthProvider>
       <BusinessProvider>
+        <ToggleProvider>
         <BrowserRouter>
           <Routes>
             {/* Gateway Page */}
@@ -86,31 +111,44 @@ export const App: React.FC = () => {
             </Route>
 
             {/* Protected Admin Dashboard Routes */}
-            <Route
-              path="/admin"
-              element={
-                <ProtectedRoute>
-                  <AdminLayout />
-                </ProtectedRoute>
-              }
-            >
-              <Route index element={<AdminDashboard />} />
-              <Route path="products" element={<AdminProducts />} />
-              <Route path="categories" element={<AdminCategoriesBrands />} />
-              <Route path="suppliers" element={<AdminSuppliers />} />
-              <Route path="stock-in" element={<AdminStockIn />} />
-              <Route path="stock-out" element={<AdminStockOut />} />
-              <Route path="labour" element={<AdminLabour />} />
-              <Route path="expenses" element={<AdminExpenses />} />
-              <Route path="bank" element={<AdminBank />} />
-              <Route path="reports" element={<AdminReports />} />
-              <Route path="settings" element={<AdminSettings />} />
-            </Route>
+          <Route
+            path="/admin"
+            element={
+              <ProtectedRoute>
+                <AppShell />
+              </ProtectedRoute>
+            }
+          >
+            <Route index element={<Navigate to="dashboard" replace />} />
+
+            <Route path="dashboard" element={<Dashboard />} />
+            <Route path="products" element={<Products />} />
+            <Route path="categories" element={<Categories />} />
+            <Route path="stock" element={<StockOverview />} />
+            <Route path="stock-in" element={<StockIn />} />
+            <Route path="stock-out" element={<StockOut />} />
+            <Route path="stock-maintenance" element={<StockMaintenance />} />
+            <Route path="purchases" element={<Purchases />} />
+            <Route path="sales" element={<Sales />} />
+            <Route path="customers" element={<Customers />} />
+            <Route path="suppliers" element={<Suppliers />} />
+            <Route path="bank" element={<Bank />} />
+            <Route path="cash" element={<Cash />} />
+            <Route path="payments" element={<Payments />} />
+            <Route path="expenses" element={<Expenses />} />
+            <Route path="reports" element={<Reports />} />
+            <Route path="users" element={<UsersPage />} />
+            <Route path="settings" element={<Settings />} />
+            <Route path="activity-log" element={<ActivityLog />} />
+
+            <Route path="*" element={<Navigate to="dashboard" replace />} />
+          </Route>
 
             {/* Fallback wildcard route */}
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </BrowserRouter>
+        </ToggleProvider>
       </BusinessProvider>
     </AuthProvider>
   );
