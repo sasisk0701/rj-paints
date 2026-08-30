@@ -1,5 +1,5 @@
 datasource db {
-  provider = "postgresql"
+  provider = "mysql"
   url      = env("DATABASE_URL")
 }
 
@@ -31,11 +31,13 @@ model AdminUser {
 model Product {
   id            String       @id @default(uuid())
   name          String
-  category      String
+  categoryId    String?
+  category      Category?    @relation(fields: [categoryId], references: [id])
+  categoryName  String
   brand         String
   sku           String       @unique
   barcode       String       @unique
-  description   String?
+  description   String?      @db.Text
   purchasePrice Float
   sellingPrice  Float
   gstRate       Float        @default(18.0)
@@ -51,6 +53,19 @@ model Product {
 
   stockInItems  StockInItem[]
   stockOutItems StockOutItem[]
+}
+
+model Category {
+  id          String       @id @default(uuid())
+  name        String
+  business    BusinessType @default(PAINTS)
+  description String?      @db.Text
+  color       String       @default("#6B7280")
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  deletedAt   DateTime?
+
+  products    Product[]
 }
 
 model Supplier {
@@ -165,4 +180,22 @@ model BankAccount {
   type           String
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
+}
+
+model Settings {
+  id        String   @id @default(uuid())
+  key       String   @unique
+  value     String
+  updatedAt DateTime @updatedAt
+}
+
+model ActivityLog {
+  id        String   @id @default(uuid())
+  userId    String
+  userName  String
+  action    String
+  module    String
+  reference String?
+  business  String   @default("paints")
+  createdAt DateTime @default(now())
 }

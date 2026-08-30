@@ -3,6 +3,7 @@ import { NavLink } from "react-router-dom";
 import clsx from "clsx";
 import { NAV_GROUPS, NAV_BY_KEY } from "@/constants/nav";
 import { Avatar } from "@/components/common/Swatch.tsx";
+import { useAuth } from "@/context/AuthContext";
 
 /**
  * Sidebar
@@ -57,16 +58,24 @@ function SidebarBase() {
 
       {groups}
 
-      <div className="mt-auto px-5 py-3.5 border-t border-border">
-        <div className="flex items-center gap-2.5">
-          <Avatar initials="SK" size={32} />
-          <div>
-            <div className="text-[13px] font-semibold text-ink">Selvi Kannan</div>
-            <div className="text-[11.5px] text-ink-3">Stock Manager</div>
-          </div>
+      <SidebarFooter />
+    </aside>
+  );
+}
+
+function SidebarFooter() {
+  const { user } = useAuth();
+  const initials = user?.name?.split(' ').map((w) => w[0]).join('').slice(0, 2).toUpperCase() ?? 'AD';
+  return (
+    <div className="mt-auto px-5 py-3.5 border-t border-border">
+      <div className="flex items-center gap-2.5">
+        <Avatar initials={initials} size={32} />
+        <div>
+          <div className="text-[13px] font-semibold text-ink">{user?.name ?? 'Admin'}</div>
+          <div className="text-[11.5px] text-ink-3">Administrator</div>
         </div>
       </div>
-    </aside>
+    </div>
   );
 }
 

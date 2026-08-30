@@ -19,19 +19,6 @@ import { ShadeCardsPage } from './pages/public/ShadeCardsPage';
 import { ContactPage } from './pages/public/ContactPage';
 import { AdminLoginPage } from './pages/public/AdminLoginPage';
 
-// Admin Pages
-import { AdminLayout } from './pages/admin/AdminLayout';
-import { AdminDashboard } from './pages/admin/AdminDashboard';
-import { AdminProducts } from './pages/admin/AdminProducts';
-import { AdminCategoriesBrands } from './pages/admin/AdminCategoriesBrands';
-import { AdminSuppliers } from './pages/admin/AdminSuppliers';
-import { AdminStockIn } from './pages/admin/AdminStockIn';
-import { AdminStockOut } from './pages/admin/AdminStockOut';
-import { AdminLabour } from './pages/admin/AdminLabour';
-import { AdminExpenses } from './pages/admin/AdminExpenses';
-import { AdminBank } from './pages/admin/AdminBank';
-import { AdminReports } from './pages/admin/AdminReports';
-import { AdminSettings } from './pages/admin/AdminSettings';
 import { ToggleProvider } from './context/ToggleContext';
 
 import AppShell from './pages/admin/AppShell.tsx';

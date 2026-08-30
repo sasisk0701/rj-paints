@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { Modal, Form, Input, Select, Button, message } from 'antd';
+import { Modal, Form, Input, Select, message } from 'antd';
 import { Building2, Send, CheckCircle2, Phone, Sparkles } from 'lucide-react';
+import { Button } from '@/components/common/Button';
 
 interface Props {
   open: boolean;
@@ -120,12 +121,10 @@ export const ProjectInquiryModal: React.FC<Props> = ({ open, onClose, defaultSer
 
           <div className="pt-2">
             <Button
-              type="primary"
-              htmlType="submit"
+              type="submit"
               loading={loading}
-              block
               size="large"
-              className="bg-amber-500 hover:bg-amber-600 border-none text-slate-950 font-bold h-12 text-sm shadow-xl flex items-center justify-center space-x-2"
+              className="w-full bg-amber-500 hover:bg-amber-600 border-amber-500 text-slate-950 font-bold h-12 text-sm shadow-xl"
             >
               <Send className="w-4 h-4" />
               <span>Submit & Send to WhatsApp</span>

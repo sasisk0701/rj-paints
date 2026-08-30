@@ -3,11 +3,11 @@ import clsx from "clsx";
 import type { Toggle, Tone } from "@/types/types";
 
 const TONE_CLASSES: Record<Tone, string> = {
-  success: "bg-success-soft text-success",
-  warn: "bg-warn-soft text-warn",
-  danger: "bg-danger-soft text-danger",
-  neutral: "bg-surface-2 text-ink-2 border border-border",
-  paints: "bg-paints-soft text-paints",
+  success:   "bg-success-soft   text-success",
+  warn:      "bg-warn-soft      text-warn",
+  danger:    "bg-danger-soft    text-danger",
+  neutral:   "bg-surface-2      text-ink-2    border border-border",
+  paints:    "bg-paints-soft    text-paints",
   interiors: "bg-interiors-soft text-interiors",
 };
 
@@ -33,7 +33,6 @@ function BadgeBase({ tone = "neutral", children, className }: BadgeProps) {
 
 export const Badge = memo(BadgeBase);
 
-/** Convenience: badge for a business name, tone derived automatically. */
 function BusinessBadgeBase({ business }: { business: Toggle }) {
   return (
     <Badge tone={business === "paints" ? "paints" : "interiors"}>

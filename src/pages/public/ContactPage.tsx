@@ -1,6 +1,7 @@
 import React from 'react';
-import { Card, Form, Input, Button, message } from 'antd';
+import { Card, Form, Input, message } from 'antd';
 import { MapPin, Phone, Mail, Globe, ShieldCheck, User, Send, Clock } from 'lucide-react';
+import { Button } from '@/components/common/Button';
 
 export const ContactPage: React.FC = () => {
   const [form] = Form.useForm();
@@ -119,11 +120,10 @@ export const ContactPage: React.FC = () => {
               </Form.Item>
 
               <Button
-                type="primary"
-                htmlType="submit"
+                type="submit"
                 size="large"
-                block
-                className="bg-blue-600 hover:bg-blue-700 font-bold h-12 flex items-center justify-center space-x-2"
+                loading={false}
+                className="w-full bg-blue-600 hover:bg-blue-700 border-blue-600 font-bold h-12 text-white shadow-md shadow-blue-500/20"
               >
                 <Send className="w-4 h-4" />
                 <span>Submit & WhatsApp S. Madasamy</span>

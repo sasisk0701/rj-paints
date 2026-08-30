@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Form, Input, Button, Alert, Card, message } from 'antd';
+import { Form, Input, Alert, Card, message } from 'antd';
 import { useAuth } from '../../context/AuthContext';
 import { Lock, Mail, ShieldCheck, ArrowRight, Sparkles } from 'lucide-react';
 import { motion } from 'framer-motion';
+import { Button } from '@/components/common/Button';
 
 export const AdminLoginPage: React.FC = () => {
   const { login } = useAuth();
@@ -87,12 +88,10 @@ export const AdminLoginPage: React.FC = () => {
             </Form.Item>
 
             <Button
-              type="primary"
-              htmlType="submit"
+              type="submit"
               loading={loading}
-              block
               size="large"
-              className="bg-slate-900 hover:bg-slate-800 border-none font-bold h-12 text-sm rounded-xl shadow-lg flex items-center justify-center space-x-2"
+              className="w-full bg-slate-900 hover:bg-slate-800 border-slate-900 font-bold h-12 text-sm rounded-xl shadow-lg text-white"
             >
               <span>Authenticate JWT Admin Session</span>
               <ArrowRight className="w-4 h-4" />

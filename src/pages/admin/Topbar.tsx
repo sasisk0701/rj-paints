@@ -1,15 +1,26 @@
 import { memo, useMemo } from "react";
 import { useLocation } from "react-router-dom";
-import { Search, Bell } from "lucide-react";
+import { Search, Bell, LogOut } from "lucide-react";
 import { NAV_BY_KEY } from "@/constants/nav";
 import { BusinessSwitch } from "./BusinessSwitch.tsx";
 import { Avatar } from "@/components/common/Swatch.tsx";
+import { useAuth } from "@/context/AuthContext";
+import { useNavigate } from "react-router-dom";
 
 /**
  * Topbar
  */
 function TopbarBase() {
+  const { user, logout } = useAuth();
+  const navigate = useNavigate();
   const location = useLocation();
+
+  const initials = user?.name?.split(' ').map((w) => w[0]).join('').slice(0, 2).toUpperCase() ?? 'AD';
+
+  const handleLogout = async () => {
+    await logout();
+    navigate('/login');
+  };
 
   const { title, crumb } = useMemo(() => {
     const key = location.pathname.replace("/", "") || "dashboard";
@@ -42,7 +53,15 @@ function TopbarBase() {
         >
           <Bell size={16} />
         </button>
-        <Avatar initials="SK" size={34} />
+        <button
+          type="button"
+          onClick={handleLogout}
+          title="Logout"
+          className="w-[34px] h-[34px] rounded-lg border border-border bg-surface flex items-center justify-center text-ink-2 hover:bg-surface-2"
+        >
+          <LogOut size={16} />
+        </button>
+        <Avatar initials={initials} size={34} />
       </div>
     </header>
   );
