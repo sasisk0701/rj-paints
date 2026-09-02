@@ -7,9 +7,6 @@ import { Avatar } from "@/components/common/Swatch.tsx";
 import { useAuth } from "@/context/AuthContext";
 import { useNavigate } from "react-router-dom";
 
-/**
- * Topbar
- */
 function TopbarBase() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
@@ -23,11 +20,11 @@ function TopbarBase() {
   };
 
   const { title, crumb } = useMemo(() => {
-    const key = location.pathname.replace("/", "") || "dashboard";
+    const key = location.pathname.replace(/^\/admin\/?/, '') || 'dashboard';
     const item = NAV_BY_KEY[key];
     return {
-      title: item ? item.label : "Dashboard",
-      crumb: item ? item.label : "Overview / Dashboard",
+      title: item ? item.label : 'Dashboard',
+      crumb: item ? `Admin / ${item.label}` : 'Admin / Dashboard',
     };
   }, [location.pathname]);
 

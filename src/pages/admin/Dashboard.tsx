@@ -1,21 +1,15 @@
-import { useMemo } from "react";
-import { Clock, Download, Plus } from "lucide-react";
+import { useState, useCallback, useEffect, useMemo } from "react";
+import { Download, RefreshCw } from "lucide-react";
 import { useBusiness } from "@/hooks/useBusiness.ts";
-import { dashboardData } from "@/data/dashboardData";
-import { Toolbar,FilterChip } from "@/components/common/Toolbar.tsx";
+import { dashboardService, type ApiDashboardData } from "@/services/api";
+import { Toolbar } from "@/components/common/Toolbar.tsx";
 import { Button } from "@/components/common/Button.tsx";
 import { Badge } from "@/components/common/Badge.tsx";
 import { Swatch } from "@/components/common/Swatch";
-import { PanelHeader } from "@/components/common/Panel.tsx";
-import { PanelBody } from "@/components/common/Panel.tsx";
+import { PanelHeader, PanelBody, Panel } from "@/components/common/Panel.tsx";
 import { KpiRow } from "@/components/common/KpiCard";
-import { Panel } from "@/components/common/Panel.tsx";
+import type { Tone } from "@/types/types";
 
-/**
- * Renders the "Stock In vs Stock Out" bar chart as inline SVG.
- * Kept as a small pure function (not a component) since it's only ever
- * called once per render from within the memoized chart block below.
- */
 function renderChartBars(bars: [number, number][], accent: string) {
   return bars.map(([h1, h2], i) => (
     <g key={i}>
@@ -27,59 +21,67 @@ function renderChartBars(bars: [number, number][], accent: string) {
 
 export default function Dashboard() {
   const { toggle } = useBusiness();
-
-  // Re-select the dataset only when `business` changes, not on every
-  // parent re-render (e.g. from an unrelated Topbar state update).
-  const data = useMemo(() => dashboardData[toggle], [toggle]);
+  const [data, setData] = useState<ApiDashboardData | null>(null);
+  const [loading, setLoading] = useState(false);
   const accent = toggle === "paints" ? "#0E8A6D" : "#C4762E";
-  const badgeTone = toggle === "paints" ? "paints" : "interiors";
+  const badgeTone: Tone = toggle === "paints" ? "paints" : "interiors";
+
+  const fetchData = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await dashboardService.get(toggle.toUpperCase());
+      setData(res);
+    } catch {
+      // silently fail — keep stale data if any
+    } finally {
+      setLoading(false);
+    }
+  }, [toggle]);
+
+  useEffect(() => { fetchData(); }, [fetchData]);
 
   const chartBars = useMemo(
-    () => renderChartBars(data.chartBars, accent),
-    [data.chartBars, accent]
+    () => data ? renderChartBars(data.chartBars, accent) : null,
+    [data, accent]
   );
+
+  const today = new Date().toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
 
   return (
     <div>
       <Toolbar
-        left={
-          <div className="text-xs text-ink-3">
-            Wednesday, 25 August 2026 · {toggle === "paints" ? "Paints" : "Interiors"} business
-          </div>
-        }
+        left={<div className="text-xs text-ink-3">{today} · {toggle === "paints" ? "Paints" : "Interiors"} business</div>}
         right={
           <>
-            <FilterChip icon={Clock}>Last 30 days</FilterChip>
+            <Button variant="ghost" size="sm" icon={RefreshCw} loading={loading} onClick={fetchData}>Refresh</Button>
             <Button variant="ghost" size="sm" icon={Download}>Export</Button>
-            <Button variant="primary" size="sm" icon={Plus}>New Stock In</Button>
           </>
         }
       />
 
-      <KpiRow items={data.kpis} />
+      <KpiRow items={data?.kpis ?? []} />
 
       <div className="grid grid-cols-[1.4fr_1fr] gap-4 mb-4 max-[1100px]:grid-cols-1">
         <Panel>
           <PanelHeader
             title="Stock In vs Stock Out"
             subtitle={`${toggle === "paints" ? "Paints" : "Interiors"} business · last 8 weeks`}
-            actions={<FilterChip>{toggle === "paints" ? "Paints ▾" : "Interiors ▾"}</FilterChip>}
           />
           <PanelBody>
-            <svg viewBox="0 0 560 200" width="100%" height="200" style={{ overflow: "visible" }}>
-              <line x1="0" y1="170" x2="560" y2="170" stroke="#E3E5EA" strokeWidth="1" />
-              {chartBars}
-            </svg>
-            <div className="flex gap-4 mt-2.5 text-xs text-ink-2">
-              <span>
-                <span className="inline-block w-2.5 h-2.5 rounded-sm mr-1.5" style={{ backgroundColor: accent }} />
-                Stock In
-              </span>
-              <span>
-                <span className="inline-block w-2.5 h-2.5 rounded-sm mr-1.5 bg-ink-3" />
-                Stock Out
-              </span>
-            </div>
+            {loading && !data ? (
+              <div className="h-[200px] flex items-center justify-center text-ink-3 text-sm">Loading…</div>
+            ) : (
+              <>
+                <svg viewBox="0 0 560 200" width="100%" height="200" style={{ overflow: "visible" }}>
+                  <line x1="0" y1="170" x2="560" y2="170" stroke="#E3E5EA" strokeWidth="1" />
+                  {chartBars}
+                </svg>
+                <div className="flex gap-4 mt-2.5 text-xs text-ink-2">
+                  <span><span className="inline-block w-2.5 h-2.5 rounded-sm mr-1.5" style={{ backgroundColor: accent }} />Stock In</span>
+                  <span><span className="inline-block w-2.5 h-2.5 rounded-sm mr-1.5 bg-ink-3" />Stock Out</span>
+                </div>
+              </>
+            )}
           </PanelBody>
         </Panel>
 
@@ -89,12 +91,19 @@ export default function Dashboard() {
             <div className="flex items-center gap-3">
               <Swatch color={accent} />
               <div className="flex-1">
-                <div className="font-semibold">{toggle === "paints" ? "Paints" : "Interiors"}</div>
-                <div className="text-xs text-ink-3">{data.summary.sub}</div>
+                <div className="font-semibold">{toggle === "paints" ? "RJ Paints & Hardwares" : "Styleo Interiors"}</div>
+                <div className="text-xs text-ink-3">
+                  {data ? `${data.kpis[0]?.value ?? "—"} products · ${data.kpis[1]?.value ?? "—"} stock value` : "Loading…"}
+                </div>
               </div>
               <Badge tone={badgeTone}>Active view</Badge>
             </div>
             <div className="h-px bg-border" />
+            {data && data.lowStock.length > 0 && (
+              <div className="text-xs text-danger font-medium">
+                ⚠ {data.lowStock.length} product{data.lowStock.length > 1 ? "s" : ""} below minimum stock level
+              </div>
+            )}
             <div className="text-xs text-ink-3">
               Switch the tab in the top bar to compare against the other business.
             </div>
@@ -104,30 +113,27 @@ export default function Dashboard() {
 
       <div className="grid grid-cols-2 gap-4 max-[1100px]:grid-cols-1">
         <Panel>
-          <PanelHeader title="Recent Transactions" actions={<Button variant="ghost" size="sm">View all</Button>} />
+          <PanelHeader title="Recent Transactions" />
           <div className="overflow-x-auto">
             <table className="w-full border-collapse text-[13px]">
               <thead>
                 <tr>
-                  {["Ref", "Type", "Party", "Business", "Amount", "Status"].map((h) => (
-                    <th key={h} className="text-left text-[11px] uppercase tracking-wide font-bold text-ink-3 px-3.5 py-2.5 border-b border-border bg-surface-2">
-                      {h}
-                    </th>
+                  {["Ref", "Type", "Party", "Amount", "Status"].map((h) => (
+                    <th key={h} className="text-left text-[11px] uppercase tracking-wide font-bold text-ink-3 px-3.5 py-2.5 border-b border-border bg-surface-2">{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {data.transactions.map((t) => (
-                  <tr key={t.ref} className="hover:bg-surface-2">
+                {!data || data.transactions.length === 0 ? (
+                  <tr><td colSpan={5} className="px-3.5 py-6 text-center text-ink-3 text-sm">{loading ? "Loading…" : "No recent transactions"}</td></tr>
+                ) : data.transactions.map((t, i) => (
+                  <tr key={i} className="hover:bg-surface-2">
                     <td className="px-3.5 py-3 border-b border-border font-mono text-[13px]">{t.ref}</td>
                     <td className="px-3.5 py-3 border-b border-border">{t.type}</td>
                     <td className="px-3.5 py-3 border-b border-border">{t.party}</td>
-                    <td className="px-3.5 py-3 border-b border-border">
-                      <Badge tone={badgeTone}>{toggle === "paints" ? "Paints" : "Interiors"}</Badge>
-                    </td>
                     <td className="px-3.5 py-3 border-b border-border text-right font-mono">{t.amount}</td>
                     <td className="px-3.5 py-3 border-b border-border">
-                      <Badge tone={t.statusTone}>{t.status}</Badge>
+                      <Badge tone={t.statusTone as Tone}>{t.status}</Badge>
                     </td>
                   </tr>
                 ))}
@@ -137,24 +143,24 @@ export default function Dashboard() {
         </Panel>
 
         <Panel>
-          <PanelHeader title="Low Stock Alerts" actions={<Button variant="ghost" size="sm">Manage</Button>} />
+          <PanelHeader title="Low Stock Alerts" />
           <div className="overflow-x-auto">
             <table className="w-full border-collapse text-[13px]">
               <thead>
                 <tr>
                   {["Product", "Stock", "Min"].map((h) => (
-                    <th key={h} className="text-left text-[11px] uppercase tracking-wide font-bold text-ink-3 px-3.5 py-2.5 border-b border-border bg-surface-2">
-                      {h}
-                    </th>
+                    <th key={h} className="text-left text-[11px] uppercase tracking-wide font-bold text-ink-3 px-3.5 py-2.5 border-b border-border bg-surface-2">{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {data.lowStock.map((item) => (
-                  <tr key={item.name} className="hover:bg-surface-2">
+                {!data || data.lowStock.length === 0 ? (
+                  <tr><td colSpan={3} className="px-3.5 py-6 text-center text-ink-3 text-sm">{loading ? "Loading…" : "✓ All products above minimum stock"}</td></tr>
+                ) : data.lowStock.map((item) => (
+                  <tr key={item.id} className="hover:bg-surface-2">
                     <td className="px-3.5 py-3 border-b border-border">
                       <div className="flex items-center gap-2.5">
-                        <Swatch color={item.color} size="sm" />
+                        <Swatch color={accent} size="sm" />
                         <span className="font-semibold">{item.name}</span>
                       </div>
                     </td>

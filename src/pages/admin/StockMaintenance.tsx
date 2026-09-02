@@ -1,12 +1,14 @@
-import { useMemo } from "react";
-import { Filter, Plus } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { Plus } from "lucide-react";
+import { Form, Input, InputNumber, Select, message } from "antd";
 import { useBusiness } from "@/hooks/useBusiness.ts";
-import { stockMaintenanceData } from "@/data/stockMaintenanceData";
-import { Toolbar,FilterChip } from "@/components/common/Toolbar.tsx";
+import { Toolbar, SearchBox } from "@/components/common/Toolbar.tsx";
 import { Button } from "@/components/common/Button.tsx";
 import { Badge } from "@/components/common/Badge";
 import { KpiRow } from "@/components/common/KpiCard";
 import { DataTable } from "@/components/common/DataTable";
+import { AppModal } from "@/components/common/AppModal";
+import { apiProductService, inventoryService, type ApiProduct, type InventoryListResponse, type InventoryMaintenanceRow } from "@/services/api";
 import type { TableColumn } from "@/types/types";
 
 const COLUMNS: TableColumn[] = [
@@ -17,34 +19,131 @@ const COLUMNS: TableColumn[] = [
   { key: "status", label: "Status" },
 ];
 
+type MaintenanceFormValues = {
+  referenceNo: string;
+  adjustmentDate: string;
+  notes?: string;
+  items: Array<{ productId: string; physicalCount: number }>;
+};
+
 export default function StockMaintenance() {
   const { toggle } = useBusiness();
-  const data = useMemo(() => stockMaintenanceData[toggle], [toggle]);
+  const [form] = Form.useForm<MaintenanceFormValues>();
+  const [data, setData] = useState<InventoryListResponse<InventoryMaintenanceRow> | null>(null);
+  const [products, setProducts] = useState<ApiProduct[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [modalOpen, setModalOpen] = useState(false);
+  const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
 
-  const rows = useMemo(
-    () =>
-      data.rows.map((r) => ({
-        id: r.name,
-        ...r,
-        status: <Badge tone={r.statusTone}>{r.status}</Badge>,
-      })),
-    [data.rows]
+  const fetchData = async () => {
+    setLoading(true);
+    try {
+      const [maintenanceRes, productRes] = await Promise.all([
+        inventoryService.getMaintenance(toggle),
+        apiProductService.getAll({ business: toggle }),
+      ]);
+      setData(maintenanceRes);
+      setProducts(productRes);
+    } catch {
+      message.error("Failed to load stock maintenance records");
+      setData({ kpis: [], pagination: "No records available", rows: [] });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void fetchData();
+  }, [toggle]);
+
+  const productOptions = useMemo(
+    () => products.map((product) => ({ label: `${product.name} (${product.sku})`, value: product.id })),
+    [products]
   );
+
+  const rows = useMemo(() => {
+    let filtered = data?.rows ?? [];
+    if (search) filtered = filtered.filter((r) =>
+      (r.name ?? r.itemName ?? '').toLowerCase().includes(search.toLowerCase())
+    );
+    if (statusFilter) filtered = filtered.filter((r) => r.status === statusFilter);
+    return filtered.map((r) => ({
+      ...r,
+      status: <Badge tone={r.statusTone}>{r.status}</Badge>,
+    }));
+  }, [data, search, statusFilter]);
+
+  const statusOptions = useMemo(() => {
+    const statuses = [...new Set((data?.rows ?? []).map((r) => r.status).filter(Boolean))];
+    return statuses.map((s) => ({ label: s, value: s }));
+  }, [data]);
+
+  const openModal = () => {
+    form.resetFields();
+    form.setFieldsValue({
+      referenceNo: `ADJ-${Date.now()}`,
+      adjustmentDate: new Date().toISOString().split("T")[0],
+      notes: "",
+      items: [{ productId: "", physicalCount: 0 }],
+    });
+    setModalOpen(true);
+  };
+
+  const handleSubmit = async () => {
+    try {
+      const values = await form.validateFields();
+      setSaving(true);
+      await inventoryService.createMaintenance({
+        referenceNo: values.referenceNo,
+        adjustmentDate: values.adjustmentDate,
+        business: toggle.toUpperCase(),
+        notes: values.notes,
+        items: values.items.map((item) => ({
+          productId: item.productId,
+          physicalCount: Number(item.physicalCount || 0),
+        })),
+      });
+      message.success("Stock maintenance saved successfully");
+      setModalOpen(false);
+      await fetchData();
+    } catch (error: any) {
+      if (error?.errorFields) return;
+      message.error(error?.response?.data?.error || "Failed to save stock maintenance");
+    } finally {
+      setSaving(false);
+    }
+  };
 
   return (
     <div>
-      <KpiRow items={data.kpis} />
+      <KpiRow items={data?.kpis ?? []} />
       <Toolbar
         left={
           <>
-            <FilterChip icon={Filter}>Type ▾</FilterChip>
-            <FilterChip>{toggle === "paints" ? "Paints" : "Interiors"}</FilterChip>
+            <Select
+              placeholder="All Status"
+              allowClear size="small" style={{ width: 150 }}
+              value={statusFilter || undefined}
+              onChange={(v) => setStatusFilter(v ?? '')}
+              options={statusOptions}
+            />
+            <SearchBox
+              placeholder="Search product…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
           </>
         }
         right={
           <>
-            <Button variant="ghost" size="sm">Start Physical Count</Button>
-            <Button variant="primary" size="sm" icon={Plus}>Log Correction</Button>
+            <Button variant="ghost" size="sm" onClick={openModal}>
+              Start Physical Count
+            </Button>
+            <Button variant="primary" size="sm" icon={Plus} onClick={openModal}>
+              Log Correction
+            </Button>
           </>
         }
       />
@@ -52,9 +151,93 @@ export default function StockMaintenance() {
         columns={COLUMNS}
         rows={rows}
         title="Physical Stock Verification"
-        subtitle={`${toggle === "paints" ? "Paints" : "Interiors"} business · cycle 22 Aug 2026`}
-        paginationText="Showing all differences this cycle"
+        subtitle={`${toggle === "paints" ? "Paints" : "Interiors"} business`}
+        paginationText={data?.pagination ?? "Loading..."}
       />
+
+      <AppModal
+        open={modalOpen}
+        title="Log Physical Count"
+        subtitle="Compare system stock with the physical count and update inventory"
+        onClose={() => setModalOpen(false)}
+        onConfirm={handleSubmit}
+        confirmText="Save Count"
+        loading={saving}
+        width={820}
+      >
+        <Form form={form} layout="vertical" className="space-y-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <Form.Item name="referenceNo" label="Reference Number" rules={[{ required: true, message: "Required" }]}>
+              <Input placeholder="ADJ-1001" />
+            </Form.Item>
+            <Form.Item name="adjustmentDate" label="Count Date" rules={[{ required: true, message: "Required" }]}>
+              <Input type="date" />
+            </Form.Item>
+          </div>
+
+          <Form.Item name="notes" label="Notes">
+            <Input placeholder="Optional remarks" />
+          </Form.Item>
+
+          <Form.List
+            name="items"
+            rules={[
+              {
+                validator: async (_, items) => {
+                  if (!items || items.length === 0) {
+                    throw new Error("Add at least one item");
+                  }
+                },
+              },
+            ]}
+          >
+            {(fields, { add, remove }) => (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="text-xs font-bold uppercase tracking-widest text-ink-3">Items</div>
+                  <Button type="button" variant="ghost" size="sm" icon={Plus} onClick={() => add({ productId: "", physicalCount: 0 })}>
+                    Add Item
+                  </Button>
+                </div>
+                {fields.map((field) => (
+                  <div key={field.key} className="grid grid-cols-12 gap-3 items-end rounded-2xl border border-border bg-surface-2 p-4">
+                    <Form.Item
+                      name={[field.name, "productId"]}
+                      label="Product"
+                      rules={[{ required: true, message: "Select product" }]}
+                      className="col-span-12 md:col-span-7"
+                    >
+                      <Select placeholder="Choose product" options={productOptions} showSearch optionFilterProp="label" />
+                    </Form.Item>
+                    <Form.Item
+                      name={[field.name, "physicalCount"]}
+                      label="Physical Count"
+                      rules={[{ required: true, message: "Required" }]}
+                      className="col-span-6 md:col-span-3"
+                    >
+                      <InputNumber min={0} className="w-full" />
+                    </Form.Item>
+                    <div className="col-span-6 md:col-span-2 flex justify-end">
+                      <Button
+                        type="button"
+                        variant="dangerGhost"
+                        size="sm"
+                        onClick={() => remove(field.name)}
+                        disabled={fields.length === 1}
+                      >
+                        Remove
+                      </Button>
+                    </div>
+                    <div className="col-span-12 text-[11px] text-ink-3">
+                      System stock is pulled from the selected product automatically and stored in the audit record.
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </Form.List>
+        </Form>
+      </AppModal>
     </div>
   );
 }

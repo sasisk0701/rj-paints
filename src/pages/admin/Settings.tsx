@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState, type ChangeEvent } from 'react';
 import { message, Switch } from 'antd';
-import { settingsService, databaseBackupService } from '@/services/api';
+import { settingsService } from '@/services/api';
 import { Button } from '@/components/common/Button.tsx';
 import { Panel, PanelBody, PanelHeader } from '@/components/common/Panel.tsx';
 
@@ -310,16 +310,28 @@ function Notifications({ all, set, save, saving }: SectionProps) {
 
 // ─── Section: Backup / Data ────────────────────────────────────────────────
 function BackupData() {
-  const handleExport = () => {
-    const json = databaseBackupService.exportDatabaseJSON();
-    const blob = new Blob([json], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `rj-paints-backup-${new Date().toISOString().split('T')[0]}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
-    message.success('Backup downloaded');
+  const handleExport = async () => {
+    try {
+      // Fetch all real data from the API
+      const [settings] = await Promise.all([
+        fetch('/api/admin/settings', { headers: { Authorization: `Bearer ${localStorage.getItem('rj_admin_token')}` } }).then(r => r.json()),
+      ]);
+      const snapshot = {
+        exportedAt: new Date().toISOString(),
+        note: 'Full DB backup requires server-side export. This exports settings only. Use server pg_dump/mysqldump for full backup.',
+        settings,
+      };
+      const blob = new Blob([JSON.stringify(snapshot, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `rj-paints-settings-backup-${new Date().toISOString().split('T')[0]}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      message.success('Settings backup downloaded');
+    } catch {
+      message.error('Failed to export backup');
+    }
   };
 
   const handleImport = (e: ChangeEvent<HTMLInputElement>) => {

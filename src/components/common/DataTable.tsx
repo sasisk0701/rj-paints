@@ -10,6 +10,7 @@ export interface DataTableProps {
   subtitle?: string;
   actions?: ReactNode;
   paginationText?: string;
+  loading?: boolean;
 }
 
 /**
@@ -24,7 +25,7 @@ export interface DataTableProps {
  * search input) doesn't force every row/cell to be recreated — only a
  * change to `columns` or `rows` does.
  */
-function DataTableBase({ columns, rows, title, subtitle, actions, paginationText }: DataTableProps) {
+function DataTableBase({ columns, rows, title, subtitle, actions, paginationText, loading }: DataTableProps) {
   const headerCells = useMemo(
     () =>
       columns.map((col) => (
@@ -64,7 +65,12 @@ function DataTableBase({ columns, rows, title, subtitle, actions, paginationText
   return (
     <Panel>
       {title ? <PanelHeader title={title} subtitle={subtitle} actions={actions} /> : null}
-      <div className="overflow-x-auto">
+      <div className="overflow-x-auto relative">
+        {loading && (
+          <div className="absolute inset-0 bg-surface/60 flex items-center justify-center z-10">
+            <span className="inline-block h-6 w-6 animate-spin rounded-full border-2 border-blue-600 border-r-transparent" />
+          </div>
+        )}
         <table className="w-full border-collapse text-[13px]">
           <thead>
             <tr>{headerCells}</tr>

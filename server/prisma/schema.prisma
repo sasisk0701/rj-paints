@@ -51,8 +51,11 @@ model Product {
   updatedAt     DateTime     @updatedAt
   deletedAt     DateTime?
 
-  stockInItems  StockInItem[]
-  stockOutItems StockOutItem[]
+  stockInItems     StockInItem[]
+  stockOutItems    StockOutItem[]
+  stockAdjustments StockAdjustmentItem[]
+  purchaseItems    PurchaseItem[]
+  saleItems        SaleItem[]
 }
 
 model Category {
@@ -69,26 +72,30 @@ model Category {
 }
 
 model Supplier {
-  id                 String    @id @default(uuid())
+  id                 String        @id @default(uuid())
   name               String
-  gstNumber          String    @unique
+  gstNumber          String        @unique
   phone              String
   email              String?
   address            String?
   city               String
-  outstandingBalance Float     @default(0.0)
-  createdAt          DateTime  @default(now())
-  updatedAt          DateTime  @updatedAt
+  business           BusinessType  @default(PAINTS)
+  outstandingBalance Float         @default(0.0)
+  notes              String?       @db.Text
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
   deletedAt          DateTime?
 
   stockInRecords     StockInRecord[]
+  purchases          Purchase[]
 }
 
 model StockInRecord {
   id           String        @id @default(uuid())
   invoiceNo    String        @unique
-  supplierId   String
-  supplier     Supplier      @relation(fields: [supplierId], references: [id])
+  supplierId   String?
+  supplier     Supplier?     @relation(fields: [supplierId], references: [id])
+  supplierName String
   purchaseDate DateTime
   subtotal     Float
   totalGst     Float
@@ -144,42 +151,219 @@ model StockOutItem {
   total          Float
 }
 
-model LabourPayment {
-  id           String   @id @default(uuid())
-  name         String
-  phone        String
-  siteLocation String
-  description  String
-  amount       Float
+model StockAdjustmentRecord {
+  id             String                @id @default(uuid())
+  referenceNo    String                @unique
+  adjustmentDate DateTime
+  business       BusinessType
+  notes          String?
+  createdAt      DateTime              @default(now())
+  updatedAt      DateTime              @updatedAt
+
+  items          StockAdjustmentItem[]
+}
+
+model StockAdjustmentItem {
+  id                    String                @id @default(uuid())
+  stockAdjustmentId     String
+  stockAdjustmentRecord StockAdjustmentRecord @relation(fields: [stockAdjustmentId], references: [id], onDelete: Cascade)
+  productId             String
+  product               Product               @relation(fields: [productId], references: [id])
+  systemStock           Int
+  physicalCount         Int
+  difference            Int
+  notes                 String?
+}
+
+model Purchase {
+  id           String        @id @default(uuid())
+  poNumber     String        @unique
+  supplierId   String?
+  supplier     Supplier?     @relation(fields: [supplierId], references: [id])
+  supplierName String
+  purchaseDate DateTime
   paymentMode  String
-  paymentDate  DateTime
-  remarks      String?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  status       String        @default("Pending")
+  subtotal     Float         @default(0)
+  gstAmount    Float         @default(0)
+  totalAmount  Float         @default(0)
+  notes        String?       @db.Text
+  business     BusinessType  @default(PAINTS)
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  deletedAt    DateTime?
+
+  items        PurchaseItem[]
+}
+
+model PurchaseItem {
+  id            String   @id @default(uuid())
+  purchaseId    String
+  purchase      Purchase @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
+  productId     String
+  product       Product  @relation(fields: [productId], references: [id])
+  productName   String
+  quantity      Int
+  purchasePrice Float
+  gstRate       Float    @default(18)
+  amount        Float
+}
+
+model Sale {
+  id             String       @id @default(uuid())
+  invoiceNumber  String       @unique
+  customerId     String?
+  customer       Customer?    @relation(fields: [customerId], references: [id])
+  customerName   String
+  customerPhone  String
+  saleDate       DateTime
+  paymentMode    String
+  status         String       @default("Paid")
+  subtotal       Float        @default(0)
+  discountAmount Float        @default(0)
+  gstAmount      Float        @default(0)
+  totalAmount    Float        @default(0)
+  notes          String?      @db.Text
+  business       BusinessType @default(PAINTS)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  deletedAt      DateTime?
+
+  items          SaleItem[]
+}
+
+model SaleItem {
+  id           String  @id @default(uuid())
+  saleId       String
+  sale         Sale    @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  productId    String
+  product      Product @relation(fields: [productId], references: [id])
+  productName  String
+  quantity     Int
+  sellingPrice Float
+  discount     Float   @default(0)
+  gstRate      Float   @default(18)
+  amount       Float
+}
+
+model Quotation {
+  id             String         @id @default(uuid())
+  quoteNumber    String         @unique
+  customerName   String
+  customerPhone  String
+  customerEmail  String?
+  validUntil     DateTime
+  status         String         @default("Draft")
+  subtotal       Float          @default(0)
+  discountAmount Float          @default(0)
+  gstAmount      Float          @default(0)
+  totalAmount    Float          @default(0)
+  notes          String?        @db.Text
+  terms          String?        @db.Text
+  business       BusinessType   @default(PAINTS)
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  deletedAt      DateTime?
+
+  items          QuotationItem[]
+}
+
+model QuotationItem {
+  id          String    @id @default(uuid())
+  quotationId String
+  quotation   Quotation @relation(fields: [quotationId], references: [id], onDelete: Cascade)
+  productId   String?
+  description String
+  quantity    Int
+  unitPrice   Float
+  discount    Float     @default(0)
+  gstRate     Float     @default(18)
+  amount      Float
+}
+
+model Customer {
+  id                 String       @id @default(uuid())
+  name               String
+  phone              String
+  email              String?
+  address            String?
+  city               String
+  business           BusinessType @default(PAINTS)
+  creditLimit        Float        @default(0.0)
+  outstandingBalance Float        @default(0.0)
+  notes              String?      @db.Text
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
+  deletedAt          DateTime?
+
+  sales              Sale[]
 }
 
 model Expense {
-  id          String   @id @default(uuid())
+  id          String       @id @default(uuid())
   category    String
   title       String
   amount      Float
   paymentMode String
   expenseDate DateTime
   remarks     String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  business    BusinessType @default(PAINTS)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
 }
 
 model BankAccount {
-  id             String   @id @default(uuid())
+  id             String            @id @default(uuid())
   accountName    String
   bankName       String
-  accountNumber  String
+  accountNumber  String            @unique
   ifscCode       String
-  currentBalance Float
-  type           String
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  currentBalance Float             @default(0)
+  type           String            @default("Current")
+  business       BusinessType      @default(PAINTS)
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+  deletedAt      DateTime?
+
+  transactions   BankTransaction[]
+}
+
+model BankTransaction {
+  id            String      @id @default(uuid())
+  bankAccountId String
+  bankAccount   BankAccount @relation(fields: [bankAccountId], references: [id])
+  date          DateTime
+  type          String
+  description   String
+  amount        Float
+  direction     String
+  reference     String?
+  createdAt     DateTime    @default(now())
+}
+
+model CashTransaction {
+  id          String       @id @default(uuid())
+  date        DateTime
+  type        String
+  description String
+  amount      Float
+  direction   String
+  business    BusinessType @default(PAINTS)
+  reference   String?
+  createdAt   DateTime     @default(now())
+}
+
+model PaymentRecord {
+  id          String       @id @default(uuid())
+  refNumber   String       @unique
+  date        DateTime
+  type        String
+  party       String
+  paymentMode String
+  amount      Float
+  notes       String?
+  business    BusinessType @default(PAINTS)
+  createdAt   DateTime     @default(now())
 }
 
 model Settings {

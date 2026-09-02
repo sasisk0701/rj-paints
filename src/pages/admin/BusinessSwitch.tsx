@@ -21,7 +21,7 @@ function BusinessSwitchBase() {
   const isInteriors = toggle === TOGGLES.INTERIORS;
 
   return (
-    <div className="flex items-center bg-surface-2 border border-border rounded-full p-[3px] gap-0.5 flex-none">
+    <div className="flex items-center rounded-full p-[3px] gap-0.5 flex-none border border-slate-200 bg-slate-100">
       {/* Paints */}
       <button
         type="button"
@@ -31,11 +31,9 @@ function BusinessSwitchBase() {
           "transition-all duration-200",
           isPaints
             ? "text-paints shadow-sm"
-            : "text-ink-2 hover:text-paints"
+            : "text-slate-600 hover:bg-white hover:text-paints"
         )}
-        style={{
-          backgroundColor: isPaints ? "#c9dbf2ff" : "transparent",
-        }}
+        style={isPaints ? { backgroundColor: "#D1FAE5" } : undefined}
       >
         Paints
       </button>
@@ -49,11 +47,9 @@ function BusinessSwitchBase() {
           "transition-all duration-200",
           isInteriors
             ? "text-interiors shadow-sm"
-            : "text-ink-2 hover:text-interiors"
+            : "text-slate-600 hover:bg-white hover:text-interiors"
         )}
-        style={{
-          backgroundColor: isInteriors ? "#f0d5c5ff" : "transparent",
-        }}
+        style={isInteriors ? { backgroundColor: "#FEE8D6" } : undefined}
       >
         Interiors
       </button>

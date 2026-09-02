@@ -32,6 +32,7 @@ import StockOut from './pages/admin/StockOut.tsx';
 import StockMaintenance from './pages/admin/StockMaintenance.tsx';
 import Purchases from './pages/admin/Purchases.tsx';
 import Sales from './pages/admin/Sales.tsx';
+import Quotations from './pages/admin/Quotations.tsx';
 import Customers from './pages/admin/Customers.tsx';
 import Suppliers from './pages/admin/Suppliers.tsx';
 import Bank from './pages/admin/Bank.tsx';
@@ -117,6 +118,7 @@ export const App: React.FC = () => {
             <Route path="stock-maintenance" element={<StockMaintenance />} />
             <Route path="purchases" element={<Purchases />} />
             <Route path="sales" element={<Sales />} />
+            <Route path="quotations" element={<Quotations />} />
             <Route path="customers" element={<Customers />} />
             <Route path="suppliers" element={<Suppliers />} />
             <Route path="bank" element={<Bank />} />

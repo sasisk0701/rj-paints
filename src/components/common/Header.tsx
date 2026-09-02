@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
+import logo from '../../assets/logo.jpeg';
 import { useBusiness } from '../../context/BusinessContext';
 import { useAuth } from '../../context/AuthContext';
 import { BusinessSwitcherModal } from './BusinessSwitcherModal';
@@ -87,16 +88,11 @@ export const Header: React.FC = () => {
 
           {/* Brand Logo */}
           <Link to="/" className="flex items-center gap-3 group flex-shrink-0">
-            <div
-              className="w-12 h-12 rounded-2xl flex items-center justify-center font-black text-xl text-white shadow-lg transition-transform group-hover:scale-105"
-              style={{
-                background: isPaints
-                  ? 'linear-gradient(135deg, #0F3D87 0%, #1D5BBF 60%, #3B82F6 100%)'
-                  : 'linear-gradient(135deg, #92400E 0%, #D97706 60%, #F59E0B 100%)',
-              }}
-            >
-              {isPaints ? 'RJ' : 'SI'}
-            </div>
+            <img
+              src={logo}
+              alt="RJ Paints"
+              className="w-12 h-12 rounded-2xl object-cover shadow-lg transition-transform group-hover:scale-105 flex-none"
+            />
             <div className="hidden sm:block">
               <div className="text-lg font-black text-slate-900 tracking-tight leading-tight">
                 {isPaints ? (

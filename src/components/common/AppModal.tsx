@@ -15,12 +15,13 @@ export interface AppModalProps {
   width?: number;
   children: ReactNode;
   danger?: boolean;
+  footer?: ReactNode;
 }
 
 function AppModalBase({
   open, title, subtitle, onClose, onConfirm,
   confirmText = 'Save', cancelText = 'Cancel',
-  loading = false, width = 520, children, danger = false,
+  loading = false, width = 520, children, danger = false, footer,
 }: AppModalProps) {
   return (
     <Modal
@@ -59,19 +60,23 @@ function AppModalBase({
       <div className="px-6 py-5">{children}</div>
 
       {/* Footer */}
-      {onConfirm && (
+      {(footer || onConfirm) && (
         <div className="flex items-center justify-end gap-2.5 px-6 py-4 border-t border-border bg-surface-2">
-          <Button variant="ghost" size="sm" onClick={onClose} disabled={loading}>
-            {cancelText}
-          </Button>
-          <Button
-            variant={danger ? 'dangerGhost' : 'primary'}
-            size="sm"
-            onClick={onConfirm}
-            disabled={loading}
-          >
-            {loading ? 'Saving…' : confirmText}
-          </Button>
+          {footer ?? (
+            <>
+              <Button variant="ghost" size="sm" onClick={onClose} disabled={loading}>
+                {cancelText}
+              </Button>
+              <Button
+                variant={danger ? 'dangerGhost' : 'primary'}
+                size="sm"
+                onClick={onConfirm}
+                disabled={loading}
+              >
+                {loading ? 'Saving…' : confirmText}
+              </Button>
+            </>
+          )}
         </div>
       )}
     </Modal>

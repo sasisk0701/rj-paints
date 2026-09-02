@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Form, Input, Alert, Card, message } from 'antd';
 import { useAuth } from '../../context/AuthContext';
-import { Lock, Mail, ShieldCheck, ArrowRight, Sparkles } from 'lucide-react';
+import { Lock, Mail, ArrowRight, Sparkles } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { Button } from '@/components/common/Button';
 
@@ -16,10 +16,8 @@ export const AdminLoginPage: React.FC = () => {
   const handleLogin = async (values: any) => {
     setLoading(true);
     setErrorMessage(null);
-
     const res = await login(values.email, values.password);
     setLoading(false);
-
     if (res.success) {
       message.success('Admin authentication successful! Redirecting to Dashboard...');
       navigate('/admin');
@@ -31,7 +29,7 @@ export const AdminLoginPage: React.FC = () => {
   const autofillDemo = () => {
     form.setFieldsValue({
       email: 'rjpaintsandhardwares@gmail.com',
-      password: 'Admin@123'
+      password: 'Admin@123',
     });
   };
 
@@ -51,12 +49,7 @@ export const AdminLoginPage: React.FC = () => {
             <p className="text-xs text-slate-500">RJ Paints & Styleo Interiors Executive Management</p>
           </div>
 
-          <Form
-            form={form}
-            layout="vertical"
-            onFinish={handleLogin}
-            className="mt-6 space-y-4"
-          >
+          <Form form={form} layout="vertical" onFinish={handleLogin} className="mt-6 space-y-4">
             {errorMessage && (
               <Alert message={errorMessage} type="error" showIcon className="rounded-xl" />
             )}
@@ -89,16 +82,16 @@ export const AdminLoginPage: React.FC = () => {
 
             <Button
               type="submit"
+              variant="primary"
               loading={loading}
               size="large"
-              className="w-full bg-slate-900 hover:bg-slate-800 border-slate-900 font-bold h-12 text-sm rounded-xl shadow-lg text-white"
+              className="w-full font-bold h-12 text-sm rounded-xl shadow-lg"
             >
               <span>Authenticate JWT Admin Session</span>
               <ArrowRight className="w-4 h-4" />
             </Button>
           </Form>
 
-          {/* Quick Auto-fill button for testing convenience */}
           <div className="mt-6 pt-4 border-t border-slate-100 text-center">
             <button
               onClick={autofillDemo}

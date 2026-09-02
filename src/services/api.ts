@@ -1,5 +1,6 @@
 import axios from 'axios';
 import { Product, Supplier, StockInRecord, StockOutRecord, LabourPayment, ExpenseRecord, BankAccount, BankTransaction } from '../types';
+import type { KpiItem, Tone } from '../types/types';
 import { INITIAL_PRODUCTS } from '../data/paintsData';
 import { INITIAL_SUPPLIERS, INITIAL_STOCK_IN, INITIAL_STOCK_OUT, INITIAL_LABOUR, INITIAL_EXPENSES, INITIAL_BANK_ACCOUNTS, INITIAL_TRANSACTIONS } from '../data/mockAdminData';
 
@@ -192,64 +193,418 @@ export const productService = {
   },
 };
 
-// ─── Suppliers (localStorage — to be migrated) ────────────────────────────
+// ─── Suppliers (API-backed) ───────────────────────────────────────────────
+export interface ApiSupplier {
+  id: string; name: string; gstNumber: string; phone: string;
+  email: string | null; address: string | null; city: string;
+  business: string; outstandingBalance: number; notes: string | null;
+  createdAt: string; updatedAt: string;
+}
 export const supplierService = {
-  getSuppliers: async (): Promise<Supplier[]> =>
-    getStoredData<Supplier[]>('rj_db_suppliers', INITIAL_SUPPLIERS),
+  getAll: async (filters?: { business?: string; search?: string }): Promise<ApiSupplier[]> => {
+    const { data } = await axiosClient.get('/api/suppliers', { params: filters || {} });
+    return data;
+  },
+  create: async (payload: Omit<ApiSupplier, 'id' | 'createdAt' | 'updatedAt'>): Promise<ApiSupplier> => {
+    const { data } = await axiosClient.post('/api/suppliers', payload);
+    return data;
+  },
+  update: async (id: string, payload: Partial<ApiSupplier>): Promise<ApiSupplier> => {
+    const { data } = await axiosClient.put(`/api/suppliers/${id}`, payload);
+    return data;
+  },
+  remove: async (id: string) => { await axiosClient.delete(`/api/suppliers/${id}`); },
+};
 
-  addSupplier: async (supplier: Omit<Supplier, 'id' | 'createdAt'>): Promise<Supplier> => {
-    const list = getStoredData<Supplier[]>('rj_db_suppliers', INITIAL_SUPPLIERS);
-    const newSup: Supplier = { ...supplier, id: `sup-${Date.now()}`, createdAt: new Date().toISOString().split('T')[0] };
-    setStoredData('rj_db_suppliers', [newSup, ...list]);
-    return newSup;
+// ─── Customers (API-backed) ───────────────────────────────────────────────
+export interface ApiCustomer {
+  id: string; name: string; phone: string; email: string | null;
+  address: string | null; city: string; business: string;
+  creditLimit: number; outstandingBalance: number; notes: string | null;
+  createdAt: string; updatedAt: string;
+}
+export const customerService = {
+  getAll: async (filters?: { business?: string; search?: string }): Promise<ApiCustomer[]> => {
+    const { data } = await axiosClient.get('/api/customers', { params: filters || {} });
+    return data;
+  },
+  create: async (payload: Omit<ApiCustomer, 'id' | 'createdAt' | 'updatedAt'>): Promise<ApiCustomer> => {
+    const { data } = await axiosClient.post('/api/customers', payload);
+    return data;
+  },
+  update: async (id: string, payload: Partial<ApiCustomer>): Promise<ApiCustomer> => {
+    const { data } = await axiosClient.put(`/api/customers/${id}`, payload);
+    return data;
+  },
+  remove: async (id: string) => { await axiosClient.delete(`/api/customers/${id}`); },
+};
+
+export interface InventoryKpi extends KpiItem {}
+
+export interface InventoryOverviewRow {
+  id: string;
+  name: string;
+  opening: string;
+  available: string;
+  min: string;
+  statusTone: Tone;
+  status: string;
+}
+
+export interface InventoryStockInRow {
+  id: string;
+  ref: string;
+  date: string;
+  source: string;
+  party: string;
+  product: string;
+  qty: string;
+  amount: string;
+  reference: string;
+}
+
+export interface InventoryStockOutRow {
+  id: string;
+  ref: string;
+  date: string;
+  source: string;
+  party: string;
+  product: string;
+  qty: string;
+  amount: string;
+}
+
+export interface InventoryMaintenanceRow {
+  id: string;
+  name: string;
+  system: string;
+  counted: string;
+  diff: string;
+  statusTone: Tone;
+  status: string;
+  notes?: string;
+  itemName?: string;
+  date?: string;
+}
+
+export interface InventoryListResponse<Row> {
+  kpis: InventoryKpi[];
+  pagination: string;
+  rows: Row[];
+}
+
+export interface StockMovementItemInput {
+  productId: string;
+  quantity: number;
+  purchasePrice?: number;
+  sellingPrice?: number;
+  discount?: number;
+  gstRate?: number;
+  systemStock?: number;
+  physicalCount?: number;
+  notes?: string;
+}
+
+export interface StockInPayload {
+  invoiceNo: string;
+  supplierId?: string | null;
+  supplierName: string;
+  purchaseDate: string;
+  paymentMode: string;
+  notes?: string;
+  items: Array<Pick<StockMovementItemInput, 'productId' | 'quantity' | 'purchasePrice' | 'gstRate'>>;
+}
+
+export interface StockOutPayload {
+  invoiceNo: string;
+  customerName: string;
+  customerPhone: string;
+  saleDate: string;
+  paymentMode: string;
+  notes?: string;
+  items: Array<Pick<StockMovementItemInput, 'productId' | 'quantity' | 'sellingPrice' | 'discount' | 'gstRate'>>;
+}
+
+export interface StockAdjustmentPayload {
+  referenceNo: string;
+  adjustmentDate: string;
+  business: string;
+  notes?: string;
+  items: Array<Pick<StockMovementItemInput, 'productId' | 'systemStock' | 'physicalCount' | 'notes'>>;
+}
+
+// ─── Inventory (API-backed) ───────────────────────────────────────────────
+export const inventoryService = {
+  getOverview: async (business: string): Promise<InventoryListResponse<InventoryOverviewRow>> => {
+    const { data } = await axiosClient.get('/api/inventory/overview', { params: { business } });
+    return data;
   },
 
-  deleteSupplier: async (id: string): Promise<boolean> => {
-    const list = getStoredData<Supplier[]>('rj_db_suppliers', INITIAL_SUPPLIERS);
-    setStoredData('rj_db_suppliers', list.filter((s) => s.id !== id));
-    return true;
+  getStockIn: async (business: string): Promise<InventoryListResponse<InventoryStockInRow>> => {
+    const { data } = await axiosClient.get('/api/inventory/stock-in', { params: { business } });
+    return data;
+  },
+
+  createStockIn: async (record: StockInPayload): Promise<unknown> => {
+    const { data } = await axiosClient.post('/api/inventory/stock-in', record);
+    return data;
+  },
+
+  getStockOut: async (business: string): Promise<InventoryListResponse<InventoryStockOutRow>> => {
+    const { data } = await axiosClient.get('/api/inventory/stock-out', { params: { business } });
+    return data;
+  },
+
+  createStockOut: async (record: StockOutPayload): Promise<unknown> => {
+    const { data } = await axiosClient.post('/api/inventory/stock-out', record);
+    return data;
+  },
+
+  getMaintenance: async (business: string): Promise<InventoryListResponse<InventoryMaintenanceRow>> => {
+    const { data } = await axiosClient.get('/api/inventory/maintenance', { params: { business } });
+    return data;
+  },
+
+  createMaintenance: async (record: StockAdjustmentPayload): Promise<unknown> => {
+    const { data } = await axiosClient.post('/api/inventory/maintenance', record);
+    return data;
   },
 };
 
-// ─── Inventory (localStorage — to be migrated) ────────────────────────────
-export const inventoryService = {
-  getStockIn: async (): Promise<StockInRecord[]> =>
-    getStoredData<StockInRecord[]>('rj_db_stock_in', INITIAL_STOCK_IN),
-
-  createStockIn: async (record: Omit<StockInRecord, 'id' | 'createdAt'>): Promise<StockInRecord> => {
-    const records = getStoredData<StockInRecord[]>('rj_db_stock_in', INITIAL_STOCK_IN);
-    const newRecord: StockInRecord = { ...record, id: `stk-in-${Date.now()}`, createdAt: new Date().toISOString().split('T')[0] };
-    setStoredData('rj_db_stock_in', [newRecord, ...records]);
-    const products = getStoredData<Product[]>('rj_db_products', INITIAL_PRODUCTS);
-    record.items.forEach((item) => {
-      const i = products.findIndex((p) => p.id === item.productId);
-      if (i !== -1) {
-        products[i].stock += item.quantity;
-        if (products[i].stock > products[i].minStock) products[i].status = 'In Stock';
-      }
-    });
-    setStoredData('rj_db_products', products);
-    return newRecord;
+// ─── Purchases (API-backed) ─────────────────────────────────────────────────
+export interface ApiPurchase {
+  id: string; poNumber: string; supplierName: string; supplierId?: string | null;
+  purchaseDate: string; paymentMode: string; status: string;
+  subtotal: number; gstAmount: number; totalAmount: number;
+  notes?: string | null; business: string; createdAt: string;
+  items?: ApiPurchaseItem[];
+}
+export interface ApiPurchaseItem {
+  id: string; productId: string; productName: string;
+  quantity: number; purchasePrice: number; gstRate: number; amount: number;
+}
+export const purchaseService = {
+  getAll: async (filters?: { business?: string; search?: string; status?: string }): Promise<ApiPurchase[]> => {
+    const { data } = await axiosClient.get('/api/purchases', { params: filters || {} });
+    return data;
   },
-
-  getStockOut: async (): Promise<StockOutRecord[]> =>
-    getStoredData<StockOutRecord[]>('rj_db_stock_out', INITIAL_STOCK_OUT),
-
-  createStockOut: async (record: Omit<StockOutRecord, 'id' | 'createdAt'>): Promise<StockOutRecord> => {
-    const records = getStoredData<StockOutRecord[]>('rj_db_stock_out', INITIAL_STOCK_OUT);
-    const newRecord: StockOutRecord = { ...record, id: `inv-${Date.now()}`, createdAt: new Date().toISOString().split('T')[0] };
-    setStoredData('rj_db_stock_out', [newRecord, ...records]);
-    const products = getStoredData<Product[]>('rj_db_products', INITIAL_PRODUCTS);
-    record.items.forEach((item) => {
-      const i = products.findIndex((p) => p.id === item.productId);
-      if (i !== -1) {
-        products[i].stock = Math.max(0, products[i].stock - item.quantity);
-        products[i].status = products[i].stock === 0 ? 'Out of Stock' : products[i].stock <= products[i].minStock ? 'Low Stock' : 'In Stock';
-      }
-    });
-    setStoredData('rj_db_products', products);
-    return newRecord;
+  create: async (payload: Omit<ApiPurchase, 'id' | 'createdAt' | 'subtotal' | 'gstAmount' | 'totalAmount'> & { items: Omit<ApiPurchaseItem, 'id'>[] }): Promise<ApiPurchase> => {
+    const { data } = await axiosClient.post('/api/purchases', payload);
+    return data;
   },
+  update: async (id: string, payload: Partial<ApiPurchase>): Promise<ApiPurchase> => {
+    const { data } = await axiosClient.put(`/api/purchases/${id}`, payload);
+    return data;
+  },
+  remove: async (id: string) => { await axiosClient.delete(`/api/purchases/${id}`); },
+};
+
+// ─── Sales (API-backed) ───────────────────────────────────────────────────────
+export interface ApiSale {
+  id: string; invoiceNumber: string; customerName: string; customerPhone: string;
+  customerId?: string | null; saleDate: string; paymentMode: string; status: string;
+  subtotal: number; discountAmount: number; gstAmount: number; totalAmount: number;
+  notes?: string | null; business: string; createdAt: string;
+  items?: ApiSaleItem[];
+}
+export interface ApiSaleItem {
+  id: string; productId: string; productName: string;
+  quantity: number; sellingPrice: number; discount: number; gstRate: number; amount: number;
+}
+export const saleService = {
+  getAll: async (filters?: { business?: string; search?: string; status?: string }): Promise<ApiSale[]> => {
+    const { data } = await axiosClient.get('/api/sales', { params: filters || {} });
+    return data;
+  },
+  create: async (payload: Omit<ApiSale, 'id' | 'createdAt' | 'subtotal' | 'discountAmount' | 'gstAmount' | 'totalAmount'> & { items: Omit<ApiSaleItem, 'id'>[] }): Promise<ApiSale> => {
+    const { data } = await axiosClient.post('/api/sales', payload);
+    return data;
+  },
+  update: async (id: string, payload: Partial<ApiSale>): Promise<ApiSale> => {
+    const { data } = await axiosClient.put(`/api/sales/${id}`, payload);
+    return data;
+  },
+  remove: async (id: string) => { await axiosClient.delete(`/api/sales/${id}`); },
+};
+
+// ─── Quotations (API-backed) ──────────────────────────────────────────────────
+export interface ApiQuotation {
+  id: string; quoteNumber: string; customerName: string; customerPhone: string;
+  customerEmail?: string | null; validUntil: string; status: string;
+  subtotal: number; discountAmount: number; gstAmount: number; totalAmount: number;
+  notes?: string | null; terms?: string | null; business: string; createdAt: string;
+  items?: ApiQuotationItem[];
+}
+export interface ApiQuotationItem {
+  id: string; productId?: string | null; description: string;
+  quantity: number; unitPrice: number; discount: number; gstRate: number; amount: number;
+}
+export const quotationService = {
+  getAll: async (filters?: { business?: string; search?: string; status?: string }): Promise<ApiQuotation[]> => {
+    const { data } = await axiosClient.get('/api/quotations', { params: filters || {} });
+    return data;
+  },
+  create: async (payload: Omit<ApiQuotation, 'id' | 'createdAt' | 'subtotal' | 'discountAmount' | 'gstAmount' | 'totalAmount'> & { items: Omit<ApiQuotationItem, 'id'>[] }): Promise<ApiQuotation> => {
+    const { data } = await axiosClient.post('/api/quotations', payload);
+    return data;
+  },
+  update: async (id: string, payload: Partial<ApiQuotation>): Promise<ApiQuotation> => {
+    const { data } = await axiosClient.put(`/api/quotations/${id}`, payload);
+    return data;
+  },
+  remove: async (id: string) => { await axiosClient.delete(`/api/quotations/${id}`); },
+  convertToSale: async (id: string): Promise<ApiSale> => {
+    const { data } = await axiosClient.post(`/api/quotations/${id}/convert-to-sale`);
+    return data;
+  },
+};
+
+// ─── Expenses (API-backed) ───────────────────────────────────────────────
+export interface ApiExpense {
+  id: string; category: string; title: string; amount: number;
+  paymentMode: string; expenseDate: string; remarks: string | null;
+  business: string; createdAt: string; updatedAt: string;
+}
+export interface ApiExpenseRow {
+  id: string; date: string; category: string; title: string;
+  paymentMode: string; amount: string; amountRaw: number; remarks: string;
+}
+export interface ApiExpenseResponse {
+  kpis: KpiItem[];
+  rows: ApiExpenseRow[];
+  pagination: string;
+}
+export const expenseService = {
+  getAll: async (filters?: { category?: string; search?: string; from?: string; to?: string }): Promise<ApiExpenseResponse> => {
+    const { data } = await axiosClient.get('/api/expenses', { params: filters || {} });
+    return data;
+  },
+  create: async (payload: Omit<ApiExpense, 'id' | 'createdAt' | 'updatedAt'>): Promise<ApiExpense> => {
+    const { data } = await axiosClient.post('/api/expenses', payload);
+    return data;
+  },
+  update: async (id: string, payload: Partial<ApiExpense>): Promise<ApiExpense> => {
+    const { data } = await axiosClient.put(`/api/expenses/${id}`, payload);
+    return data;
+  },
+  remove: async (id: string) => { await axiosClient.delete(`/api/expenses/${id}`); },
+};
+
+// ─── Reports (API-backed) ─────────────────────────────────────────────────
+export interface ApiReportData {
+  title: string;
+  columns: string[];
+  rows: string[][];
+  summary: Record<string, string | number>;
+}
+export const reportService = {
+  get: async (type: string, filters?: { business?: string; from?: string; to?: string }): Promise<ApiReportData> => {
+    const { data } = await axiosClient.get(`/api/reports/${type}`, { params: filters || {} });
+    return data;
+  },
+};
+
+// ─── Dashboard (API-backed) ──────────────────────────────────────────────────
+export interface ApiDashboardData {
+  kpis: KpiItem[];
+  chartBars: [number, number][];
+  lowStock: { id: string; name: string; stock: number; min: number }[];
+  transactions: { ref: string; type: string; party: string; amount: string; status: string; statusTone: string }[];
+}
+export const dashboardService = {
+  get: async (business: string): Promise<ApiDashboardData> => {
+    const { data } = await axiosClient.get('/api/dashboard', { params: { business } });
+    return data;
+  },
+};
+
+// ─── Bank (API-backed) ───────────────────────────────────────────────────
+export interface ApiBankAccount {
+  id: string; accountName: string; bankName: string; accountNumber: string;
+  ifscCode: string; currentBalance: number; type: string; business: string;
+  createdAt: string;
+}
+export interface ApiBankTransaction {
+  id: string; bankAccountId: string; date: string; type: string;
+  description: string; amount: string; amountRaw: number;
+  direction: string; account: string; reference: string;
+}
+export interface ApiBankResponse {
+  kpis: KpiItem[];
+  rows: ApiBankTransaction[];
+  pagination: string;
+}
+export const bankService = {
+  getAccounts: async (business?: string): Promise<ApiBankAccount[]> => {
+    const { data } = await axiosClient.get('/api/bank/accounts', { params: business ? { business } : {} });
+    return data;
+  },
+  createAccount: async (payload: Omit<ApiBankAccount, 'id' | 'createdAt'>): Promise<ApiBankAccount> => {
+    const { data } = await axiosClient.post('/api/bank/accounts', payload);
+    return data;
+  },
+  updateAccount: async (id: string, payload: Partial<ApiBankAccount>): Promise<ApiBankAccount> => {
+    const { data } = await axiosClient.put(`/api/bank/accounts/${id}`, payload);
+    return data;
+  },
+  deleteAccount: async (id: string) => { await axiosClient.delete(`/api/bank/accounts/${id}`); },
+  getTransactions: async (filters?: { business?: string; accountId?: string; from?: string; to?: string }): Promise<ApiBankResponse> => {
+    const { data } = await axiosClient.get('/api/bank/transactions', { params: filters || {} });
+    return data;
+  },
+  createTransaction: async (payload: { bankAccountId: string; date: string; type: string; description: string; amount: number; direction: string; reference?: string }) => {
+    const { data } = await axiosClient.post('/api/bank/transactions', payload);
+    return data;
+  },
+  deleteTransaction: async (id: string) => { await axiosClient.delete(`/api/bank/transactions/${id}`); },
+};
+
+// ─── Cash (API-backed) ───────────────────────────────────────────────────
+export interface ApiCashTransaction {
+  id: string; date: string; type: string; description: string;
+  amount: string; amountRaw: number; direction: string; reference: string;
+}
+export interface ApiCashResponse {
+  kpis: KpiItem[];
+  rows: ApiCashTransaction[];
+  pagination: string;
+}
+export const cashService = {
+  getAll: async (filters?: { business?: string; from?: string; to?: string }): Promise<ApiCashResponse> => {
+    const { data } = await axiosClient.get('/api/cash/transactions', { params: filters || {} });
+    return data;
+  },
+  create: async (payload: { date: string; type: string; description: string; amount: number; direction: string; business: string; reference?: string }) => {
+    const { data } = await axiosClient.post('/api/cash/transactions', payload);
+    return data;
+  },
+  remove: async (id: string) => { await axiosClient.delete(`/api/cash/transactions/${id}`); },
+};
+
+// ─── Payments (API-backed) ───────────────────────────────────────────────
+export interface ApiPaymentRecord {
+  id: string; refNumber: string; date: string; type: string;
+  party: string; paymentMode: string; amount: string; amountRaw: number; notes: string;
+}
+export interface ApiPaymentsResponse {
+  kpis: KpiItem[];
+  rows: ApiPaymentRecord[];
+  pagination: string;
+}
+export const paymentService = {
+  getAll: async (filters?: { business?: string; type?: string; search?: string; from?: string; to?: string }): Promise<ApiPaymentsResponse> => {
+    const { data } = await axiosClient.get('/api/payments', { params: filters || {} });
+    return data;
+  },
+  create: async (payload: { refNumber: string; date: string; type: string; party: string; paymentMode: string; amount: number; notes?: string; business: string }) => {
+    const { data } = await axiosClient.post('/api/payments', payload);
+    return data;
+  },
+  update: async (id: string, payload: Partial<{ date: string; type: string; party: string; paymentMode: string; amount: number; notes: string }>) => {
+    const { data } = await axiosClient.put(`/api/payments/${id}`, payload);
+    return data;
+  },
+  remove: async (id: string) => { await axiosClient.delete(`/api/payments/${id}`); },
 };
 
 // ─── Finance (localStorage — to be migrated) ──────────────────────────────

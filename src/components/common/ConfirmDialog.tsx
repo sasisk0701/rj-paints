@@ -40,20 +40,8 @@ function ConfirmDialogBase({
       }}
     >
       <div className="px-6 py-6">
-        {/* Icon */}
-        <div className={`w-12 h-12 rounded-2xl flex items-center justify-center mb-4 ${
-          isDanger ? 'bg-danger-soft' : 'bg-warn-soft'
-        }`}>
-          {isDanger
-            ? <Trash2 size={22} className="text-danger" />
-            : <AlertTriangle size={22} className="text-warn" />
-          }
-        </div>
-
-        {/* Title */}
         <div className="text-[16px] font-bold text-ink mb-1">{title}</div>
 
-        {/* Description */}
         {description && (
           <div className="text-[13px] text-ink-3 leading-relaxed">{description}</div>
         )}

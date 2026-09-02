@@ -3,6 +3,7 @@ import { motion } from 'framer-motion';
 import { useBusiness } from '../../context/BusinessContext';
 import { useNavigate } from 'react-router-dom';
 import { Paintbrush, Building2, ArrowRight, Phone, ShieldCheck, Sparkles, CheckCircle2 } from 'lucide-react';
+import logo from '../../assets/logo.jpeg';
 
 export const GatewayPage: React.FC = () => {
   const { setBusiness } = useBusiness();
@@ -31,10 +32,7 @@ export const GatewayPage: React.FC = () => {
       {/* Header */}
       <div className="relative z-10 px-6 sm:px-10 py-8 flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <div className="w-11 h-11 rounded-2xl flex items-center justify-center font-black text-xl text-white shadow-lg"
-            style={{ background: 'linear-gradient(135deg, #0F3D87 0%, #F59E0B 100%)' }}>
-            RJ
-          </div>
+          <img src={logo} alt="RJ Paints" className="w-11 h-11 rounded-2xl object-cover shadow-lg flex-none" />
           <div>
             <p className="text-base font-black text-white tracking-tight">RJ PAINTS & STYLEO INTERIORS</p>
             <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">S. Madasamy • Kovilpatti, Tamil Nadu</p>
