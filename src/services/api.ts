@@ -474,8 +474,9 @@ export interface ApiExpenseResponse {
   rows: ApiExpenseRow[];
   pagination: string;
 }
+
 export const expenseService = {
-  getAll: async (filters?: { category?: string; search?: string; from?: string; to?: string }): Promise<ApiExpenseResponse> => {
+  getAll: async (filters?: { category?: string; business?: string; search?: string; from?: string; to?: string }): Promise<ApiExpenseResponse> => {
     const { data } = await axiosClient.get('/api/expenses', { params: filters || {} });
     return data;
   },

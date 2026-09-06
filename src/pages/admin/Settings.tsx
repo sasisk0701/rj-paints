@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState, type ChangeEvent } from 'react';
 import { message, Switch } from 'antd';
 import { settingsService } from '@/services/api';
 import { Button } from '@/components/common/Button.tsx';
+import { databaseBackupService } from '../../services/api';
 import { Panel, PanelBody, PanelHeader } from '@/components/common/Panel.tsx';
 
 // ─── Nav sections ──────────────────────────────────────────────────────────
