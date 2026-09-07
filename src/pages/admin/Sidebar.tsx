@@ -1,5 +1,5 @@
 import { memo, useMemo } from "react";
-import logo from "@/assets/logo.jpeg";
+import logo from "@/assets/logo.png";
 import { NavLink } from "react-router-dom";
 import clsx from "clsx";
 import { NAV_GROUPS, NAV_BY_KEY } from "@/constants/nav";
@@ -48,7 +48,7 @@ function SidebarBase() {
   return (
     <aside className="w-[252px] flex-none bg-surface border-r border-border flex flex-col sticky top-0 h-screen overflow-y-auto">
       <div className="flex items-center gap-2.5 px-5 pt-5 pb-4 border-b border-border">
-        <img src={logo} alt="RJ Paints" className="w-[36px] h-[36px] rounded-[9px] object-cover shadow-sm flex-none" />
+        <img src={logo} alt="RJ Paints" className="w-[52px] h-[60px] object-cover shadow-sm flex-none" />
         <div>
           <div className="font-display font-semibold text-[16.5px]">RJ Paints & Hardwares</div>
           <div className="text-[10.5px] text-ink-3 uppercase tracking-wide mt-px">

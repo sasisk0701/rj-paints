@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
-import logo from '../../assets/logo.jpeg';
+import logo from '../../assets/logo.png';
+import styleoLogo from '../../assets/styleoLogo.png';
 import { useBusiness } from '../../context/BusinessContext';
 import { useAuth } from '../../context/AuthContext';
 import { BusinessSwitcherModal } from './BusinessSwitcherModal';
@@ -89,9 +90,9 @@ export const Header: React.FC = () => {
           {/* Brand Logo */}
           <Link to="/" className="flex items-center gap-3 group flex-shrink-0">
             <img
-              src={logo}
+              src={isPaints ? logo : styleoLogo}
               alt="RJ Paints"
-              className="w-12 h-12 rounded-2xl object-cover shadow-lg transition-transform group-hover:scale-105 flex-none"
+              className="w-16 h-14 object-cover flex-none"
             />
             <div className="hidden sm:block">
               <div className="text-lg font-black text-slate-900 tracking-tight leading-tight">

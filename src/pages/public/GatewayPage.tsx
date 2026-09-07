@@ -3,7 +3,7 @@ import { motion } from 'framer-motion';
 import { useBusiness } from '../../context/BusinessContext';
 import { useNavigate } from 'react-router-dom';
 import { Paintbrush, Building2, ArrowRight, Phone, ShieldCheck, Sparkles, CheckCircle2 } from 'lucide-react';
-import logo from '../../assets/logo.jpeg';
+import logo from '../../assets/logo.png';
 
 export const GatewayPage: React.FC = () => {
   const { setBusiness } = useBusiness();
