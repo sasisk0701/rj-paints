@@ -5,6 +5,9 @@ import rateLimit from 'express-rate-limit';
 import dotenv from 'dotenv';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
+import fs from 'fs';
+import path from 'path';
+import crypto from 'crypto';
 import { PrismaClient } from '@prisma/client';
 import { authenticateJWT, AuthRequest } from './middleware/auth';
 
@@ -15,12 +18,60 @@ const prisma = new PrismaClient();
 const PORT = process.env.PORT || 5000;
 const JWT_SECRET = process.env.JWT_SECRET || 'rj_paints_super_secret_jwt_key_2026';
 
-app.use(helmet());
+app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '8mb' }));
+
+const uploadsRoot = path.resolve(__dirname, '../uploads');
+const productImagesDir = path.join(uploadsRoot, 'products');
+fs.mkdirSync(productImagesDir, { recursive: true });
+app.use('/uploads', express.static(uploadsRoot, { fallthrough: false, maxAge: '7d' }));
 
 const limiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 200 });
 app.use('/api', limiter);
+
+const LOCAL_PRODUCT_IMAGE_PREFIX = '/uploads/products/';
+const PRODUCT_IMAGE_MIME_TO_EXT: Record<string, string> = {
+  'image/jpeg': '.jpg',
+  'image/png': '.png',
+  'image/webp': '.webp',
+};
+
+function isLocalProductImage(imagePath?: string | null) {
+  return !!imagePath && imagePath.startsWith(LOCAL_PRODUCT_IMAGE_PREFIX);
+}
+
+function deleteLocalProductImage(imagePath?: string | null) {
+  if (!isLocalProductImage(imagePath)) return;
+  const fileName = path.basename(imagePath as string);
+  const filePath = path.join(productImagesDir, fileName);
+  try {
+    if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+  } catch (error) {
+    console.error('Failed to delete product image:', error);
+  }
+}
+
+function saveProductImage(fileName: string, mimeType: string, base64Data: string) {
+  const extension = PRODUCT_IMAGE_MIME_TO_EXT[mimeType];
+  if (!extension) throw new Error('Only JPG, PNG and WEBP images are allowed');
+  if (!base64Data || !/^[A-Za-z0-9+/=\r\n]+$/.test(base64Data)) throw new Error('Invalid image data');
+
+  const buffer = Buffer.from(base64Data.replace(/\s/g, ''), 'base64');
+  if (!buffer.length) throw new Error('Invalid image data');
+  if (buffer.length > 5 * 1024 * 1024) throw new Error('Image must be 5 MB or smaller');
+
+  const isJpeg = buffer.length >= 3 && buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff;
+  const isPng = buffer.length >= 8 && buffer.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
+  const isWebp = buffer.length >= 12 && buffer.subarray(0, 4).toString('ascii') === 'RIFF' && buffer.subarray(8, 12).toString('ascii') === 'WEBP';
+  const signatureMatches = (mimeType === 'image/jpeg' && isJpeg) || (mimeType === 'image/png' && isPng) || (mimeType === 'image/webp' && isWebp);
+  if (!signatureMatches) throw new Error('Uploaded file content does not match the selected image type');
+
+  const originalBase = path.basename(fileName || 'product', path.extname(fileName || '')).replace(/[^a-zA-Z0-9_-]/g, '-').slice(0, 50) || 'product';
+  const storedName = `${Date.now()}-${crypto.randomBytes(6).toString('hex')}-${originalBase}${extension}`;
+  fs.writeFileSync(path.join(productImagesDir, storedName), buffer);
+  return `${LOCAL_PRODUCT_IMAGE_PREFIX}${storedName}`;
+}
 
 async function ensureStockInSupplierNameColumn() {
   const rows = await prisma.$queryRawUnsafe<Array<{ count: bigint }>>(
@@ -247,6 +298,24 @@ app.delete('/api/categories/:id', authenticateJWT, async (req: AuthRequest, res)
 });
 
 // ─── Products ─────────────────────────────────────────────────────────────
+app.post('/api/products/image', authenticateJWT, async (req, res) => {
+  const { fileName, mimeType, data } = req.body || {};
+  if (!fileName || !mimeType || !data) return res.status(400).json({ error: 'fileName, mimeType and data are required' });
+  try {
+    const imagePath = saveProductImage(String(fileName), String(mimeType), String(data));
+    res.status(201).json({ path: imagePath });
+  } catch (error: any) {
+    res.status(400).json({ error: error?.message || 'Failed to upload image' });
+  }
+});
+
+app.delete('/api/products/image', authenticateJWT, async (req, res) => {
+  const { imagePath } = req.body || {};
+  if (!isLocalProductImage(imagePath)) return res.status(400).json({ error: 'Invalid product image path' });
+  deleteLocalProductImage(imagePath);
+  res.json({ message: 'Image deleted' });
+});
+
 app.get('/api/products', authenticateJWT, async (req, res) => {
   const { business, category, status, search } = req.query as Record<string, string>;
   const where: any = { deletedAt: null };
@@ -297,16 +366,25 @@ app.post('/api/products', authenticateJWT, async (req: AuthRequest, res) => {
 });
 
 app.put('/api/products/:id', authenticateJWT, async (req: AuthRequest, res) => {
+  const existing = await prisma.product.findUnique({ where: { id: req.params.id } });
+  if (!existing || existing.deletedAt) return res.status(404).json({ error: 'Product not found' });
+
   const { stock, minStock, ...rest } = req.body;
-  const s = +(stock ?? 0), m = +(minStock ?? 5);
+  const s = +(stock ?? existing.stock), m = +(minStock ?? existing.minStock);
   const status = s <= 0 ? 'Out of Stock' : s <= m ? 'Low Stock' : 'In Stock';
   const product = await prisma.product.update({
     where: { id: req.params.id },
     data: { ...rest, stock: s, minStock: m, status,
-            purchasePrice: rest.purchasePrice ? +rest.purchasePrice : undefined,
-            sellingPrice:  rest.sellingPrice  ? +rest.sellingPrice  : undefined,
-            gstRate:       rest.gstRate       ? +rest.gstRate       : undefined },
+            purchasePrice: rest.purchasePrice !== undefined ? +rest.purchasePrice : undefined,
+            sellingPrice:  rest.sellingPrice  !== undefined ? +rest.sellingPrice  : undefined,
+            gstRate:       rest.gstRate       !== undefined ? +rest.gstRate       : undefined,
+            image:         Object.prototype.hasOwnProperty.call(rest, 'image') ? (rest.image || null) : undefined },
   });
+
+  if (Object.prototype.hasOwnProperty.call(rest, 'image') && existing.image && existing.image !== product.image) {
+    deleteLocalProductImage(existing.image);
+  }
+
   await prisma.activityLog.create({
     data: { userId: req.user.id, userName: req.user.name, action: 'Product Updated', module: 'Catalog', reference: product.sku },
   });
@@ -314,10 +392,15 @@ app.put('/api/products/:id', authenticateJWT, async (req: AuthRequest, res) => {
 });
 
 app.delete('/api/products/:id', authenticateJWT, async (req: AuthRequest, res) => {
+  const existing = await prisma.product.findUnique({ where: { id: req.params.id } });
+  if (!existing || existing.deletedAt) return res.status(404).json({ error: 'Product not found' });
+
   const product = await prisma.product.update({
     where: { id: req.params.id },
-    data: { deletedAt: new Date() },
+    data: { deletedAt: new Date(), image: null },
   });
+  deleteLocalProductImage(existing.image);
+
   await prisma.activityLog.create({
     data: { userId: req.user.id, userName: req.user.name, action: 'Product Deleted', module: 'Catalog', reference: product.sku },
   });

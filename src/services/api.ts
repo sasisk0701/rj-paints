@@ -4,7 +4,13 @@ import type { KpiItem, Tone } from '../types/types';
 import { INITIAL_PRODUCTS } from '../data/paintsData';
 import { INITIAL_SUPPLIERS, INITIAL_STOCK_IN, INITIAL_STOCK_OUT, INITIAL_LABOUR, INITIAL_EXPENSES, INITIAL_BANK_ACCOUNTS, INITIAL_TRANSACTIONS } from '../data/mockAdminData';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+export const API_BASE_URL = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/$/, '');
+
+export const resolveAssetUrl = (assetPath?: string | null): string => {
+  if (!assetPath) return '';
+  if (/^(https?:|data:|blob:)/i.test(assetPath)) return assetPath;
+  return `${API_BASE_URL}${assetPath.startsWith('/') ? assetPath : `/${assetPath}`}`;
+};
 
 export const axiosClient = axios.create({
   baseURL: API_BASE_URL,
@@ -117,10 +123,33 @@ export interface ApiProduct {
   business: string; status: string; createdAt: string; updatedAt: string;
   category?: { id: string; name: string; color: string } | null;
 }
+const fileToBase64 = (file: File): Promise<string> => new Promise((resolve, reject) => {
+  const reader = new FileReader();
+  reader.onload = () => {
+    const result = String(reader.result || '');
+    resolve(result.includes(',') ? result.split(',')[1] : result);
+  };
+  reader.onerror = () => reject(reader.error || new Error('Unable to read image'));
+  reader.readAsDataURL(file);
+});
+
 export const apiProductService = {
   getAll: async (filters?: { business?: string; category?: string; status?: string; search?: string }): Promise<ApiProduct[]> => {
     const { data } = await axiosClient.get('/api/products', { params: filters || {} });
     return data;
+  },
+  uploadImage: async (file: File): Promise<{ path: string }> => {
+    if (file.size > 5 * 1024 * 1024) throw new Error('Image must be 5 MB or smaller');
+    const data = await fileToBase64(file);
+    const response = await axiosClient.post('/api/products/image', {
+      fileName: file.name,
+      mimeType: file.type,
+      data,
+    });
+    return response.data;
+  },
+  deleteUploadedImage: async (imagePath: string) => {
+    await axiosClient.delete('/api/products/image', { data: { imagePath } });
   },
   create: async (payload: Partial<ApiProduct>): Promise<ApiProduct> => {
     const { data } = await axiosClient.post('/api/products', payload);

@@ -1,9 +1,9 @@
 import { useState, useCallback, useEffect, useRef } from "react";
-import { Plus, Pencil, Trash2, Building2 } from "lucide-react";
+import { Plus, Pencil, Trash2, Building2, FileDown } from "lucide-react";
 import { Form, Input, InputNumber, Select, DatePicker, message } from "antd";
 import dayjs from "dayjs";
 import { useBusiness } from "@/hooks/useBusiness.ts";
-import { bankService, type ApiBankAccount } from "@/services/api";
+import { bankService, settingsService, type ApiBankAccount } from "@/services/api";
 import { Toolbar, SearchBox } from "@/components/common/Toolbar.tsx";
 import { Button } from "@/components/common/Button.tsx";
 import { Badge } from "@/components/common/Badge.tsx";
@@ -13,6 +13,7 @@ import { AppModal } from "@/components/common/AppModal";
 import { ConfirmDialog } from "@/components/common/ConfirmDialog";
 import { Panel } from "@/components/common/Panel.tsx";
 import type { TableColumn, KpiItem } from "@/types/types";
+import { downloadBillPdf } from "@/utils/billPdf";
 
 const TXN_COLS: TableColumn[] = [
   { key: "date", label: "Date" },
@@ -74,6 +75,55 @@ export default function Bank() {
   const filteredRows = debouncedSearch
     ? rows.filter(r => r.description.toLowerCase().includes(debouncedSearch.toLowerCase()) || r.account.toLowerCase().includes(debouncedSearch.toLowerCase()))
     : rows;
+
+
+  const openTransactionModal = () => {
+    txnForm.resetFields();
+    txnForm.setFieldsValue({ date: dayjs() });
+    setTxnModalOpen(true);
+  };
+
+  const handleDownloadBill = async (row: any) => {
+    try {
+      const settings = await settingsService.getSettings();
+      const prefix = toggle === 'paints' ? 'paints' : 'interiors';
+      const companyName = settings[`${prefix}_company_name`] || (toggle === 'paints' ? 'RJ Paints & Hardwares' : 'Styleo Interiors & Construction Works');
+      const billNumber = row.reference || `BANK-${row.id.slice(0, 8).toUpperCase()}`;
+      const amountRaw = Number(String(row.amountRaw ?? row.amount ?? 0).replace(/[^0-9.-]/g, '')) || 0;
+
+      downloadBillPdf({
+        title: 'Bank Transaction Bill',
+        billNumber,
+        date: row.date,
+        business: {
+          name: companyName,
+          address: settings[`${prefix}_address`],
+          phone: settings[`${prefix}_phone`] || settings['paints_phone'],
+          email: settings[`${prefix}_email`],
+          gstNumber: settings[`${prefix}_gst`],
+          website: settings[`${prefix}_website`],
+          proprietor: settings['owner_name'],
+        },
+        partyLabel: 'Bank / Account',
+        partyName: row.account,
+        paymentMode: row.type,
+        reference: row.reference || billNumber,
+        notes: `${row.direction} - ${row.description}`,
+        items: [{
+          description: row.description || `${row.type} bank transaction`,
+          quantity: 1,
+          rate: amountRaw,
+          amount: amountRaw,
+        }],
+        totalAmount: amountRaw,
+        footerNote: settings['invoice_footer_note'],
+        terms: settings['invoice_terms'],
+        fileName: `bank-bill-${billNumber}`,
+      });
+    } catch {
+      message.error('Unable to generate bill');
+    }
+  };
 
   const handleSaveTxn = async () => {
     const values = await txnForm.validateFields();
@@ -148,7 +198,10 @@ export default function Bank() {
     amount: r.amount,
     direction: <Badge tone={r.direction === "Credit" ? "success" : "danger"}>{r.direction}</Badge>,
     actions: (
-      <Button variant="ghost" size="sm" icon={Trash2} onClick={() => setDeleteTarget({ id: r.id, label: r.description })} />
+      <span className="flex gap-1 justify-end">
+        <Button variant="ghost" size="sm" icon={FileDown} onClick={() => handleDownloadBill(r)}>Bill</Button>
+        <Button variant="ghost" size="sm" icon={Trash2} onClick={() => setDeleteTarget({ id: r.id, label: r.description })} />
+      </span>
     ),
   }));
 
@@ -182,7 +235,7 @@ export default function Bank() {
         right={
           <>
             <Button variant="ghost" size="sm" icon={Building2} onClick={() => { setEditingAcc(null); accForm.resetFields(); setAccModalOpen(true); }}>Add Account</Button>
-            <Button variant="primary" size="sm" icon={Plus} onClick={() => { txnForm.resetFields(); setTxnModalOpen(true); }}>Add Transaction</Button>
+            <Button variant="primary" size="sm" icon={Plus} onClick={openTransactionModal}>Add Transaction</Button>
           </>
         }
       />
@@ -227,7 +280,7 @@ export default function Bank() {
             <InputNumber min={0} className="w-full" placeholder="0.00" />
           </Form.Item>
           <Form.Item name="date" label="Date" rules={[{ required: true }]} className="col-span-1">
-            <DatePicker className="w-full" format="DD/MM/YYYY" defaultValue={dayjs()} />
+            <DatePicker className="w-full" format="DD/MM/YYYY" />
           </Form.Item>
           <Form.Item name="reference" label="Reference / Cheque No." className="col-span-2">
             <Input placeholder="Optional" />

@@ -5,7 +5,7 @@ export const COMPANY_DETAILS = {
   interiorsName: "Styleo Interiors & Construction Works",
   owner: "S. Madasamy",
   location: "Kovilpatti, Tamil Nadu, India",
-  website: "www.styleointeriors.com",
+  website: "www.rjpaintsinteriors.in",
   paintPartner: "Asian Paints Authorized Dealer",
   contactNumbers: ["9488475040", "6381593537", "9969429723"],
   email: "rjpaintsandhardwares@gmail.com",

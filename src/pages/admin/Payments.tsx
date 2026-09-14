@@ -1,9 +1,9 @@
 import { useState, useCallback, useEffect, useRef } from "react";
-import { Plus, Pencil, Trash2 } from "lucide-react";
+import { Plus, Pencil, Trash2, FileDown } from "lucide-react";
 import { Form, Input, InputNumber, Select, DatePicker, message } from "antd";
 import dayjs from "dayjs";
 import { useBusiness } from "@/hooks/useBusiness.ts";
-import { paymentService, type ApiPaymentRecord } from "@/services/api";
+import { paymentService, settingsService, type ApiPaymentRecord } from "@/services/api";
 import { Toolbar, SearchBox } from "@/components/common/Toolbar.tsx";
 import { Button } from "@/components/common/Button.tsx";
 import { Badge } from "@/components/common/Badge.tsx";
@@ -12,6 +12,7 @@ import { DataTable } from "@/components/common/DataTable";
 import { AppModal } from "@/components/common/AppModal";
 import { ConfirmDialog } from "@/components/common/ConfirmDialog";
 import type { TableColumn, KpiItem } from "@/types/types";
+import { downloadBillPdf } from "@/utils/billPdf";
 
 const COLUMNS: TableColumn[] = [
   { key: "refNumber", label: "Ref #" },
@@ -65,11 +66,14 @@ export default function Payments() {
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
 
-  const openAdd = () => {
+  const openAdd = (type: "Payment" | "Receipt") => {
     setEditing(null);
     form.resetFields();
-    // Auto-generate ref number
-    form.setFieldValue("refNumber", `REF-${Date.now().toString().slice(-6)}`);
+    form.setFieldsValue({
+      type,
+      refNumber: `${type === "Receipt" ? "RCT" : "PAY"}-${Date.now().toString().slice(-6)}`,
+      date: dayjs(),
+    });
     setModalOpen(true);
   };
 
@@ -117,6 +121,46 @@ export default function Payments() {
     }
   };
 
+  const handleDownloadBill = async (row: ApiPaymentRecord) => {
+    try {
+      const settings = await settingsService.getSettings();
+      const prefix = toggle === 'paints' ? 'paints' : 'interiors';
+      const companyName = settings[`${prefix}_company_name`] || (toggle === 'paints' ? 'RJ Paints & Hardwares' : 'Styleo Interiors & Construction Works');
+
+      downloadBillPdf({
+        title: row.type === 'Receipt' ? 'Receipt Bill' : 'Payment Bill',
+        billNumber: row.refNumber,
+        date: row.date,
+        business: {
+          name: companyName,
+          address: settings[`${prefix}_address`],
+          phone: settings[`${prefix}_phone`] || settings['paints_phone'],
+          email: settings[`${prefix}_email`],
+          gstNumber: settings[`${prefix}_gst`],
+          website: settings[`${prefix}_website`],
+          proprietor: settings['owner_name'],
+        },
+        partyLabel: row.type === 'Receipt' ? 'Received From' : 'Paid To',
+        partyName: row.party,
+        paymentMode: row.paymentMode,
+        reference: row.refNumber,
+        notes: row.notes || `${row.type} recorded through ${row.paymentMode}`,
+        items: [{
+          description: row.notes || `${row.type} - ${row.party}`,
+          quantity: 1,
+          rate: row.amountRaw,
+          amount: row.amountRaw,
+        }],
+        totalAmount: row.amountRaw,
+        footerNote: settings['invoice_footer_note'],
+        terms: settings['invoice_terms'],
+        fileName: `${row.type.toLowerCase()}-bill-${row.refNumber}`,
+      });
+    } catch {
+      message.error('Unable to generate bill');
+    }
+  };
+
   const handleDelete = async () => {
     if (!deleteTarget) return;
     try {
@@ -139,6 +183,7 @@ export default function Payments() {
     amount: r.amount,
     actions: (
       <span className="flex gap-1 justify-end">
+        <Button variant="ghost" size="sm" icon={FileDown} onClick={() => handleDownloadBill(r)}>Bill</Button>
         <Button variant="ghost" size="sm" icon={Pencil} onClick={() => openEdit(r)} />
         <Button variant="ghost" size="sm" icon={Trash2} onClick={() => setDeleteTarget(r)} />
       </span>
@@ -152,8 +197,8 @@ export default function Payments() {
         left={<SearchBox value={search} onChange={handleSearch} placeholder="Search payments…" />}
         right={
           <>
-            <Button variant="ghost" size="sm" icon={Plus} onClick={() => { setEditing(null); form.resetFields(); form.setFieldValue("type", "Payment"); form.setFieldValue("refNumber", `PAY-${Date.now().toString().slice(-6)}`); setModalOpen(true); }}>Record Payment</Button>
-            <Button variant="primary" size="sm" icon={Plus} onClick={() => { setEditing(null); form.resetFields(); form.setFieldValue("type", "Receipt"); form.setFieldValue("refNumber", `RCT-${Date.now().toString().slice(-6)}`); setModalOpen(true); }}>Record Receipt</Button>
+            <Button variant="ghost" size="sm" icon={Plus} onClick={() => openAdd("Payment")}>Record Payment</Button>
+            <Button variant="primary" size="sm" icon={Plus} onClick={() => openAdd("Receipt")}>Record Receipt</Button>
           </>
         }
       />
@@ -194,7 +239,7 @@ export default function Payments() {
             <InputNumber min={0} className="w-full" placeholder="0.00" />
           </Form.Item>
           <Form.Item name="date" label="Date" rules={[{ required: true }]} className="col-span-1">
-            <DatePicker className="w-full" format="DD/MM/YYYY" defaultValue={dayjs()} />
+            <DatePicker className="w-full" format="DD/MM/YYYY" />
           </Form.Item>
           <Form.Item name="notes" label="Notes" className="col-span-2">
             <Input.TextArea rows={2} placeholder="Optional notes" />

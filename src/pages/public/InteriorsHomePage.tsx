@@ -119,7 +119,7 @@ export const InteriorsHomePage: React.FC = () => {
                     <div>
                       <p className="text-xs font-bold text-amber-400 uppercase tracking-widest">Styleo Interiors</p>
                       <p className="text-sm font-bold text-white mt-0.5">Proprietor: S. Madasamy</p>
-                      <p className="text-xs text-slate-400">www.styleointeriors.com</p>
+                      <p className="text-xs text-slate-400">www.rjpaintsinteriors.in</p>
                     </div>
                     <button
                       onClick={() => openInquiry()}

@@ -12,7 +12,7 @@ Enterprise-grade, dual-business web platform for **RJ Paints & Hardwares** (Asia
 - **Location**: Near New Bus Stand, Main Road, Kovilpatti - 628501, Tamil Nadu, India
 - **Contact Phone**: 9488475040 | 6381593537 | 9969429723
 - **Email**: rjpaintsandhardwares@gmail.com
-- **Website**: [www.styleointeriors.com](https://www.styleointeriors.com)
+- **Website**: [www.rjpaintsinteriors.in](https://www.rjpaintsinteriors.in)
 
 ---
 

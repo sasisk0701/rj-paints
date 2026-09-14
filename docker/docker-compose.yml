@@ -26,6 +26,8 @@ services:
       JWT_SECRET: super_secret_jwt_key_rj_paints_kovilpatti
     ports:
       - "5000:5000"
+    volumes:
+      - product_uploads:/app/uploads
     depends_on:
       - postgres
 
@@ -42,3 +44,4 @@ services:
 
 volumes:
   postgres_data:
+  product_uploads:

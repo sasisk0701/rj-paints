@@ -142,13 +142,13 @@ export const Footer: React.FC = () => {
             </li>
             <li>
               <a
-                href="https://www.styleointeriors.com"
+                href="https://www.rjpaintsinteriors.in"
                 target="_blank"
                 rel="noreferrer"
                 className="flex items-center gap-3 text-slate-400 hover:text-white transition-colors text-xs"
               >
                 <Globe className="w-4 h-4 text-slate-600 flex-shrink-0" />
-                www.styleointeriors.com
+                www.rjpaintsinteriors.in
               </a>
             </li>
           </ul>

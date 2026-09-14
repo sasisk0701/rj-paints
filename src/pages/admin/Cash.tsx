@@ -117,7 +117,7 @@ export default function Cash() {
       <KpiRow items={kpis} />
       <Toolbar
         left={<SearchBox value={search} onChange={handleSearch} placeholder="Search cash entries…" />}
-        right={<Button variant="primary" size="sm" icon={Plus} onClick={() => { form.resetFields(); setModalOpen(true); }}>Record Cash Entry</Button>}
+        right={<Button variant="primary" size="sm" icon={Plus} onClick={() => { form.resetFields(); form.setFieldsValue({ date: dayjs() }); setModalOpen(true); }}>Record Cash Entry</Button>}
       />
       <DataTable
         columns={COLUMNS}
@@ -153,7 +153,7 @@ export default function Cash() {
             <InputNumber min={0} className="w-full" placeholder="0.00" />
           </Form.Item>
           <Form.Item name="date" label="Date" rules={[{ required: true }]} className="col-span-1">
-            <DatePicker className="w-full" format="DD/MM/YYYY" defaultValue={dayjs()} />
+            <DatePicker className="w-full" format="DD/MM/YYYY" />
           </Form.Item>
           <Form.Item name="reference" label="Reference" className="col-span-2">
             <Input placeholder="Optional" />

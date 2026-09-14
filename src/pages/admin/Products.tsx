@@ -1,8 +1,8 @@
 import { useEffect, useState, useMemo, useCallback } from 'react';
-import { Plus, Download, Pencil, Trash2 } from 'lucide-react';
+import { Plus, Download, Pencil, Trash2, ImagePlus, X } from 'lucide-react';
 import { Form, Input, Select, InputNumber, message } from 'antd';
 import { useBusiness } from '@/hooks/useBusiness.ts';
-import { apiProductService, categoryService, ApiProduct, ApiCategory } from '@/services/api';
+import { apiProductService, categoryService, resolveAssetUrl, ApiProduct, ApiCategory } from '@/services/api';
 import { Toolbar, SearchBox } from '@/components/common/Toolbar.tsx';
 import { Button } from '@/components/common/Button.tsx';
 import { DataTable } from '@/components/common/DataTable';
@@ -15,13 +15,14 @@ import { ConfirmDialog } from '@/components/common/ConfirmDialog';
 import type { TableColumn, Tone } from '@/types/types';
 
 const COLUMNS: TableColumn[] = [
+  { key: 'image',    label: 'Image' },
   { key: 'product',  label: 'Product' },
   { key: 'category', label: 'Category' },
   { key: 'brand',    label: 'Brand' },
   { key: 'unit',     label: 'Unit' },
   { key: 'cost',     label: 'Cost',          align: 'num' },
-  { key: 'price',    label: 'Selling Price',  align: 'num' },
-  { key: 'stock',    label: 'Stock',          align: 'num' },
+  { key: 'price',    label: 'Selling Price', align: 'num' },
+  { key: 'stock',    label: 'Stock',         align: 'num' },
   { key: 'status',   label: 'Status' },
   { key: 'actions',  label: '' },
 ];
@@ -39,6 +40,8 @@ const UNITS = [
 ];
 
 const GST_RATES = [0, 5, 12, 18, 28];
+const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
+const MAX_IMAGE_SIZE = 5 * 1024 * 1024;
 
 export default function Products() {
   const { toggle } = useBusiness();
@@ -54,6 +57,10 @@ export default function Products() {
   const [editing, setEditing]           = useState<ApiProduct | null>(null);
   const [saving, setSaving]             = useState(false);
   const [deleting, setDeleting]         = useState(false);
+  const [imageFile, setImageFile]       = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState('');
+  const [removeExistingImage, setRemoveExistingImage] = useState(false);
+  const [imageInputKey, setImageInputKey] = useState(0);
   const [form] = Form.useForm();
 
   const fetchAll = useCallback(async () => {
@@ -79,10 +86,25 @@ export default function Products() {
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
 
+  const resetImageState = (preview = '') => {
+    if (imagePreview.startsWith('blob:')) URL.revokeObjectURL(imagePreview);
+    setImageFile(null);
+    setImagePreview(preview);
+    setRemoveExistingImage(false);
+    setImageInputKey((key) => key + 1);
+  };
+
+  const closeModal = () => {
+    setModalOpen(false);
+    form.resetFields();
+    resetImageState();
+  };
+
   const openAdd = () => {
     setEditing(null);
     form.resetFields();
     form.setFieldsValue({ business: toggle.toUpperCase(), gstRate: 18, stock: 0, minStock: 5 });
+    resetImageState();
     setModalOpen(true);
   };
 
@@ -93,17 +115,55 @@ export default function Products() {
       sku: p.sku, barcode: p.barcode, description: p.description ?? '',
       purchasePrice: p.purchasePrice, sellingPrice: p.sellingPrice,
       gstRate: p.gstRate, stock: p.stock, minStock: p.minStock,
-      unit: p.unit, business: p.business, image: p.image ?? '',
+      unit: p.unit, business: p.business,
     });
+    resetImageState(resolveAssetUrl(p.image));
     setModalOpen(true);
   };
 
+  const handleImageChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
+      message.error('Only JPG, PNG and WEBP images are allowed');
+      event.target.value = '';
+      return;
+    }
+    if (file.size > MAX_IMAGE_SIZE) {
+      message.error('Image must be 5 MB or smaller');
+      event.target.value = '';
+      return;
+    }
+    if (imagePreview.startsWith('blob:')) URL.revokeObjectURL(imagePreview);
+    setImageFile(file);
+    setImagePreview(URL.createObjectURL(file));
+    setRemoveExistingImage(false);
+  };
+
+  const handleRemoveImage = () => {
+    if (imagePreview.startsWith('blob:')) URL.revokeObjectURL(imagePreview);
+    setImageFile(null);
+    setImagePreview('');
+    setRemoveExistingImage(true);
+    setImageInputKey((key) => key + 1);
+  };
+
   const handleSubmit = async () => {
+    let uploadedPath = '';
     try {
       const values = await form.validateFields();
       setSaving(true);
       const cat = categories.find((c) => c.id === values.categoryId);
-      const payload = { ...values, categoryName: cat?.name ?? '' };
+
+      let image: string | null = editing?.image ?? null;
+      if (removeExistingImage) image = null;
+      if (imageFile) {
+        const uploaded = await apiProductService.uploadImage(imageFile);
+        uploadedPath = uploaded.path;
+        image = uploaded.path;
+      }
+
+      const payload = { ...values, categoryName: cat?.name ?? '', image };
       if (editing) {
         await apiProductService.update(editing.id, payload);
         message.success('Product updated successfully');
@@ -111,11 +171,13 @@ export default function Products() {
         await apiProductService.create(payload);
         message.success('Product created successfully');
       }
-      setModalOpen(false);
-      form.resetFields();
+      closeModal();
       fetchAll();
     } catch (err: any) {
-      if (err?.response) message.error(err.response.data?.error || 'Failed to save product');
+      if (uploadedPath) await apiProductService.deleteUploadedImage(uploadedPath).catch(() => {});
+      if (!err?.errorFields) {
+        message.error(err?.response?.data?.error || err?.message || 'Failed to save product');
+      }
     } finally {
       setSaving(false);
     }
@@ -126,7 +188,7 @@ export default function Products() {
     try {
       setDeleting(true);
       await apiProductService.remove(deleteTarget.id);
-      message.success('Product deleted');
+      message.success('Product and its stored image deleted');
       setDeleteTarget(null);
       fetchAll();
     } catch {
@@ -169,6 +231,18 @@ export default function Products() {
   const rows = useMemo(() =>
     products.map((p) => ({
       id: p.id,
+      image: p.image ? (
+        <img
+          src={resolveAssetUrl(p.image)}
+          alt={p.name}
+          className="w-11 h-11 rounded-lg object-cover border border-border bg-surface-2"
+          loading="lazy"
+        />
+      ) : (
+        <div className="w-11 h-11 rounded-lg border border-dashed border-border bg-surface-2 flex items-center justify-center text-ink-3">
+          <ImagePlus size={16} />
+        </div>
+      ),
       product: (
         <CellItem
           icon={<Swatch color={p.category?.color ?? '#6B7280'} />}
@@ -247,12 +321,11 @@ export default function Products() {
         />
       )}
 
-      {/* ── Add / Edit Modal ── */}
       <AppModal
         open={modalOpen}
         title={editing ? 'Edit Product' : 'Add New Product'}
         subtitle={editing ? `Editing: ${editing.name}` : 'Fill in the details to add a new product'}
-        onClose={() => { setModalOpen(false); form.resetFields(); }}
+        onClose={closeModal}
         onConfirm={handleSubmit}
         confirmText={editing ? 'Save Changes' : 'Create Product'}
         loading={saving}
@@ -260,7 +333,6 @@ export default function Products() {
       >
         <Form form={form} layout="vertical">
           <div className="grid grid-cols-2 gap-x-4">
-
             <Form.Item name="name" label="Product Name" rules={[{ required: true, message: 'Required' }]} className="col-span-2">
               <Input placeholder="e.g. Asian Paints Royale Luxury Emulsion" />
             </Form.Item>
@@ -315,23 +387,44 @@ export default function Products() {
               />
             </Form.Item>
 
-            <Form.Item name="image" label="Image URL (optional)" className="col-span-2">
-              <Input placeholder="https://images.unsplash.com/…" />
+            <Form.Item label="Product Image" className="col-span-2">
+              <div className="flex items-center gap-4 rounded-xl border border-border bg-surface-2 p-3">
+                {imagePreview ? (
+                  <img src={imagePreview} alt="Product preview" className="w-20 h-20 rounded-lg object-cover border border-border bg-white" />
+                ) : (
+                  <div className="w-20 h-20 rounded-lg border border-dashed border-border bg-white flex items-center justify-center text-ink-3">
+                    <ImagePlus size={22} />
+                  </div>
+                )}
+                <div className="flex-1">
+                  <input
+                    key={imageInputKey}
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    onChange={handleImageChange}
+                    className="block w-full text-sm text-ink-2 file:mr-3 file:rounded-md file:border-0 file:bg-blue-50 file:px-3 file:py-2 file:text-xs file:font-semibold file:text-blue-600 hover:file:bg-blue-100"
+                  />
+                  <div className="text-[11px] text-ink-3 mt-1.5">JPG, PNG or WEBP · maximum 5 MB · stored on the backend server</div>
+                  {imagePreview && (
+                    <Button type="button" variant="dangerGhost" size="sm" icon={X} className="mt-2" onClick={handleRemoveImage}>
+                      Remove Image
+                    </Button>
+                  )}
+                </div>
+              </div>
             </Form.Item>
 
             <Form.Item name="description" label="Description (optional)" className="col-span-2">
               <Input.TextArea rows={2} placeholder="Short product description…" />
             </Form.Item>
-
           </div>
         </Form>
       </AppModal>
 
-      {/* ── Delete Confirm Dialog ── */}
       <ConfirmDialog
         open={!!deleteTarget}
         title={`Delete "${deleteTarget?.name}"?`}
-        description="This product will be permanently removed. This action cannot be undone."
+        description="This product and its locally stored image will be permanently removed. This action cannot be undone."
         onCancel={() => setDeleteTarget(null)}
         onConfirm={handleDelete}
         loading={deleting}

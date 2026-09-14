@@ -6,7 +6,7 @@ import { Lock, Mail, ArrowRight, Sparkles } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { Button } from '@/components/common/Button';
 
-export const AdminLoginPage: React.FC = () => {
+export const AdminLoginPage = () => {
   const { login } = useAuth();
   const navigate = useNavigate();
   const [form] = Form.useForm();
@@ -24,13 +24,6 @@ export const AdminLoginPage: React.FC = () => {
     } else {
       setErrorMessage(res.message || 'Invalid admin credentials');
     }
-  };
-
-  const autofillDemo = () => {
-    form.setFieldsValue({
-      email: 'rjpaintsandhardwares@gmail.com',
-      password: 'Admin@123',
-    });
   };
 
   return (
@@ -92,18 +85,6 @@ export const AdminLoginPage: React.FC = () => {
             </Button>
           </Form>
 
-          <div className="mt-6 pt-4 border-t border-slate-100 text-center">
-            <button
-              onClick={autofillDemo}
-              className="text-xs font-bold text-blue-600 hover:text-blue-800 bg-blue-50 px-3 py-1.5 rounded-lg border border-blue-200 inline-flex items-center"
-            >
-              <Sparkles className="w-3.5 h-3.5 mr-1" />
-              Auto-fill Admin Credentials
-            </button>
-            <p className="text-[10px] text-slate-400 mt-2">
-              Default Credentials: <code>rjpaintsandhardwares@gmail.com</code> / <code>Admin@123</code>
-            </p>
-          </div>
         </Card>
       </motion.div>
     </div>

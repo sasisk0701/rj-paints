@@ -79,8 +79,8 @@ export const ContactPage: React.FC = () => {
                 <Globe className="w-5 h-5 text-blue-600 shrink-0 mt-0.5" />
                 <div>
                   <span className="font-bold text-slate-900 block">Official Website</span>
-                  <a href="http://www.styleointeriors.com" target="_blank" rel="noreferrer" className="text-blue-700 font-semibold hover:underline">
-                    www.styleointeriors.com
+                  <a href="http://www.rjpaintsinteriors.in" target="_blank" rel="noreferrer" className="text-blue-700 font-semibold hover:underline">
+                    www.rjpaintsinteriors.in
                   </a>
                 </div>
               </div>

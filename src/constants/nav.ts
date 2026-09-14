@@ -24,8 +24,8 @@ import type { NavGroupType, NavItemType } from "@/types/types";
 
 export const NAV_ITEMS: NavItemType[] = [
   { key: "dashboard", label: "Dashboard", icon: LayoutGrid },
-  { key: "products", label: "Products", icon: Box },
   { key: "categories", label: "Categories", icon: Tag },
+  { key: "products", label: "Products", icon: Box },
   { key: "stock", label: "Stock Overview", icon: Layers },
   { key: "stock-in", label: "Stock In", icon: ArrowDown },
   { key: "stock-out", label: "Stock Out", icon: ArrowUp },
@@ -47,7 +47,7 @@ export const NAV_ITEMS: NavItemType[] = [
 
 export const NAV_GROUPS: NavGroupType[] = [
   { label: "Overview", keys: ["dashboard"] },
-  { label: "Catalog", keys: ["products", "categories"] },
+  { label: "Catalog", keys: ["categories", "products"] },
   { label: "Inventory", keys: ["stock", "stock-in", "stock-out", "stock-maintenance"] },
   { label: "Trade", keys: ["purchases", "sales", "quotations"] },
   { label: "Contacts", keys: ["customers", "suppliers"] },
