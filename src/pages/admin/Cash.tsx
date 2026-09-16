@@ -22,7 +22,24 @@ const COLUMNS: TableColumn[] = [
   { key: "actions", label: "", align: "num" },
 ];
 
-const CASH_TYPES = ["Cash In", "Cash Out", "Petty Cash", "Counter Sale", "Advance", "Refund", "Other"];
+const CASH_TYPES = [
+  "Cash In",
+  "Cash Out",
+  "Freight charges",
+  "Fuel",
+  "Token",
+  "Petty Cash",
+  "Wages/ labour",
+  "Rent",
+  "EB/Recharge",
+  "Bank",
+  "Salary",
+  "Co",
+  "Counter Sale",
+  "Advance",
+  "Refund",
+  "Other",
+];
 
 export default function Cash() {
   const { toggle } = useBusiness();
