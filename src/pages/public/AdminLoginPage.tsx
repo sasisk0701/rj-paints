@@ -54,7 +54,7 @@ export const AdminLoginPage = () => {
             >
               <Input
                 prefix={<Mail className="w-4 h-4 text-slate-400 mr-2" />}
-                placeholder="rjpaintsandhardwares@gmail.com"
+                placeholder="test@gmail.com"
                 size="large"
                 className="rounded-xl"
               />
