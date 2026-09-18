@@ -3,7 +3,7 @@ import { Plus, Pencil, Trash2, Building2, FileDown } from "lucide-react";
 import { Form, Input, InputNumber, Select, DatePicker, message } from "antd";
 import dayjs from "dayjs";
 import { useBusiness } from "@/hooks/useBusiness.ts";
-import { bankService, settingsService, type ApiBankAccount } from "@/services/api";
+import { bankService, type ApiBankAccount, type ApiBankTransaction } from "@/services/api";
 import { Toolbar, SearchBox } from "@/components/common/Toolbar.tsx";
 import { Button } from "@/components/common/Button.tsx";
 import { Badge } from "@/components/common/Badge.tsx";
@@ -12,8 +12,10 @@ import { DataTable } from "@/components/common/DataTable";
 import { AppModal } from "@/components/common/AppModal";
 import { ConfirmDialog } from "@/components/common/ConfirmDialog";
 import { Panel } from "@/components/common/Panel.tsx";
+import { FinanceDateFilter, type FinanceDateFilterValue } from "@/components/common/DateFilter";
 import type { TableColumn, KpiItem } from "@/types/types";
 import { downloadBillPdf } from "@/utils/billPdf";
+import { combinedBillDate, combinedBillNumber, getFinanceBillSettings } from "@/utils/financeBill";
 
 const TXN_COLS: TableColumn[] = [
   { key: "date", label: "Date" },
@@ -27,15 +29,20 @@ const TXN_COLS: TableColumn[] = [
 
 const TXN_TYPES = ["Deposit", "Withdrawal", "Transfer", "Cheque", "NEFT/RTGS", "UPI", "Other"];
 
+const amountValue = (row: ApiBankTransaction) =>
+  Number(String(row.amountRaw ?? row.amount ?? 0).replace(/[^0-9.-]/g, "")) || 0;
+
 export default function Bank() {
   const { toggle } = useBusiness();
   const [kpis, setKpis] = useState<KpiItem[]>([]);
-  const [rows, setRows] = useState<any[]>([]);
+  const [rows, setRows] = useState<ApiBankTransaction[]>([]);
   const [accounts, setAccounts] = useState<ApiBankAccount[]>([]);
   const [pagination, setPagination] = useState("");
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [dateFilter, setDateFilter] = useState<FinanceDateFilterValue>({});
+  const [selectedRowIds, setSelectedRowIds] = useState<Array<string | number>>([]);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [txnModalOpen, setTxnModalOpen] = useState(false);
@@ -56,26 +63,39 @@ export default function Bank() {
     setLoading(true);
     try {
       const [txnRes, accs] = await Promise.all([
-        bankService.getTransactions({ business: toggle.toUpperCase() }),
+        bankService.getTransactions({
+          business: toggle.toUpperCase(),
+          ...dateFilter,
+        }),
         bankService.getAccounts(toggle.toUpperCase()),
       ]);
       setKpis(txnRes.kpis);
       setRows(txnRes.rows);
       setPagination(txnRes.pagination);
       setAccounts(accs);
+      setSelectedRowIds([]);
     } catch {
       message.error("Failed to load bank data");
     } finally {
       setLoading(false);
     }
-  }, [toggle]);
+  }, [toggle, dateFilter]);
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
 
   const filteredRows = debouncedSearch
-    ? rows.filter(r => r.description.toLowerCase().includes(debouncedSearch.toLowerCase()) || r.account.toLowerCase().includes(debouncedSearch.toLowerCase()))
+    ? rows.filter((r) =>
+        r.description.toLowerCase().includes(debouncedSearch.toLowerCase()) ||
+        r.account.toLowerCase().includes(debouncedSearch.toLowerCase())
+      )
     : rows;
 
+  useEffect(() => {
+    const visibleIds = new Set(filteredRows.map((row) => row.id));
+    setSelectedRowIds((current) => current.filter((id) => visibleIds.has(id as string)));
+  }, [debouncedSearch, rows]);
+
+  const selectedRows = filteredRows.filter((row) => selectedRowIds.includes(row.id));
 
   const openTransactionModal = () => {
     txnForm.resetFields();
@@ -83,28 +103,18 @@ export default function Bank() {
     setTxnModalOpen(true);
   };
 
-  const handleDownloadBill = async (row: any) => {
+  const handleDownloadBill = async (row: ApiBankTransaction) => {
     try {
-      const settings = await settingsService.getSettings();
-      const prefix = toggle === 'paints' ? 'paints' : 'interiors';
-      const companyName = settings[`${prefix}_company_name`] || (toggle === 'paints' ? 'RJ Paints & Hardwares' : 'Styleo Interiors & Construction Works');
+      const billSettings = await getFinanceBillSettings(toggle);
       const billNumber = row.reference || `BANK-${row.id.slice(0, 8).toUpperCase()}`;
-      const amountRaw = Number(String(row.amountRaw ?? row.amount ?? 0).replace(/[^0-9.-]/g, '')) || 0;
+      const amountRaw = amountValue(row);
 
       downloadBillPdf({
-        title: 'Bank Transaction Bill',
+        title: "Bank Transaction Bill",
         billNumber,
         date: row.date,
-        business: {
-          name: companyName,
-          address: settings[`${prefix}_address`],
-          phone: settings[`${prefix}_phone`] || settings['paints_phone'],
-          email: settings[`${prefix}_email`],
-          gstNumber: settings[`${prefix}_gst`],
-          website: settings[`${prefix}_website`],
-          proprietor: settings['owner_name'],
-        },
-        partyLabel: 'Bank / Account',
+        business: billSettings.business,
+        partyLabel: "Bank / Account",
         partyName: row.account,
         paymentMode: row.type,
         reference: row.reference || billNumber,
@@ -116,12 +126,49 @@ export default function Bank() {
           amount: amountRaw,
         }],
         totalAmount: amountRaw,
-        footerNote: settings['invoice_footer_note'],
-        terms: settings['invoice_terms'],
+        footerNote: billSettings.footerNote,
+        terms: billSettings.terms,
         fileName: `bank-bill-${billNumber}`,
       });
     } catch {
-      message.error('Unable to generate bill');
+      message.error("Unable to generate bill");
+    }
+  };
+
+  const handleDownloadSelected = async () => {
+    if (selectedRows.length === 0) {
+      message.warning("Select at least one bank transaction");
+      return;
+    }
+    try {
+      const billSettings = await getFinanceBillSettings(toggle);
+      const billNumber = combinedBillNumber("BANK-COMBINED");
+      const totalAmount = selectedRows.reduce((sum, row) => sum + amountValue(row), 0);
+      const modes = Array.from(new Set(selectedRows.map((row) => row.type)));
+
+      downloadBillPdf({
+        title: "Combined Bank Transactions",
+        billNumber,
+        date: combinedBillDate(selectedRows.map((row) => row.date)),
+        business: billSettings.business,
+        partyLabel: "Selected Records",
+        partyName: `${selectedRows.length} bank transactions`,
+        paymentMode: modes.length === 1 ? modes[0] : "Multiple",
+        reference: billNumber,
+        notes: `Combined bill generated from ${selectedRows.length} selected bank transactions.`,
+        items: selectedRows.map((row) => ({
+          description: `${row.date} | ${row.account} | ${row.direction} | ${row.description}`,
+          quantity: 1,
+          rate: amountValue(row),
+          amount: amountValue(row),
+        })),
+        totalAmount,
+        footerNote: billSettings.footerNote,
+        terms: billSettings.terms,
+        fileName: `bank-combined-bill-${billNumber}`,
+      });
+    } catch {
+      message.error("Unable to generate combined bill");
     }
   };
 
@@ -209,7 +256,6 @@ export default function Bank() {
     <div>
       <KpiRow items={kpis} />
 
-      {/* Account Cards */}
       <div className="grid gap-3.5 mb-4" style={{ gridTemplateColumns: `repeat(${Math.max(accounts.length, 1)}, 1fr)` }}>
         {accounts.length === 0 ? (
           <Panel className="p-4 text-ink-3 text-sm">No bank accounts yet. Add one below.</Panel>
@@ -231,9 +277,23 @@ export default function Bank() {
       </div>
 
       <Toolbar
-        left={<SearchBox value={search} onChange={handleSearch} placeholder="Search transactions…" />}
+        left={
+          <>
+            <SearchBox value={search} onChange={handleSearch} placeholder="Search transactions…" />
+            <FinanceDateFilter onChange={setDateFilter} />
+          </>
+        }
         right={
           <>
+            <Button
+              variant="ghost"
+              size="sm"
+              icon={FileDown}
+              disabled={selectedRows.length === 0}
+              onClick={handleDownloadSelected}
+            >
+              Download Selected ({selectedRows.length})
+            </Button>
             <Button variant="ghost" size="sm" icon={Building2} onClick={() => { setEditingAcc(null); accForm.resetFields(); setAccModalOpen(true); }}>Add Account</Button>
             <Button variant="primary" size="sm" icon={Plus} onClick={openTransactionModal}>Add Transaction</Button>
           </>
@@ -246,9 +306,11 @@ export default function Bank() {
         title="Bank Transaction History"
         subtitle={`${toggle === "paints" ? "Paints" : "Interiors"} business`}
         paginationText={pagination}
+        selectable
+        selectedRowIds={selectedRowIds}
+        onSelectionChange={setSelectedRowIds}
       />
 
-      {/* Add Transaction Modal */}
       <AppModal
         open={txnModalOpen}
         title="Add Bank Transaction"
@@ -288,7 +350,6 @@ export default function Bank() {
         </Form>
       </AppModal>
 
-      {/* Add/Edit Account Modal */}
       <AppModal
         open={accModalOpen}
         title={editingAcc ? "Edit Bank Account" : "Add Bank Account"}

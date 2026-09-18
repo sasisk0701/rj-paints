@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from "react";
-import { Plus, Pencil, Trash2 } from "lucide-react";
+import { Plus, Pencil, Trash2, FileDown } from "lucide-react";
 import { Form, Input, InputNumber, Select, DatePicker, message } from "antd";
 import dayjs from "dayjs";
 import { useBusiness } from "@/hooks/useBusiness.ts";
@@ -11,7 +11,10 @@ import { KpiRow } from "@/components/common/KpiCard";
 import { DataTable } from "@/components/common/DataTable";
 import { AppModal } from "@/components/common/AppModal";
 import { ConfirmDialog } from "@/components/common/ConfirmDialog";
+import { FinanceDateFilter, type FinanceDateFilterValue } from "@/components/common/DateFilter";
 import type { TableColumn, KpiItem } from "@/types/types";
+import { downloadBillPdf } from "@/utils/billPdf";
+import { combinedBillDate, combinedBillNumber, getFinanceBillSettings } from "@/utils/financeBill";
 
 const COLUMNS: TableColumn[] = [
   { key: "date", label: "Date" },
@@ -25,6 +28,23 @@ const COLUMNS: TableColumn[] = [
 const CATEGORIES = ["Rent", "Electricity", "Transport", "Salary", "Fuel", "Maintenance", "Office", "Labour", "Other"];
 const PAYMENT_MODES = ["Cash", "Bank", "UPI", "Cheque"];
 
+const expenseNotes = (row: ApiExpenseRow) => {
+  if (!row.remarks) return row.title;
+  try {
+    const parsed = JSON.parse(row.remarks);
+    if (parsed.__labour) {
+      return [
+        parsed.workerName ? `Worker: ${parsed.workerName}` : "",
+        parsed.siteLocation ? `Site: ${parsed.siteLocation}` : "",
+        parsed.notes || "",
+      ].filter(Boolean).join(" | ") || row.title;
+    }
+  } catch {
+    // Plain text remarks are valid.
+  }
+  return row.remarks;
+};
+
 export default function Expenses() {
   const { toggle } = useBusiness();
   const [kpis, setKpis] = useState<KpiItem[]>([]);
@@ -33,6 +53,8 @@ export default function Expenses() {
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [dateFilter, setDateFilter] = useState<FinanceDateFilterValue>({});
+  const [selectedRowIds, setSelectedRowIds] = useState<Array<string | number>>([]);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const handleSearch = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -41,6 +63,7 @@ export default function Expenses() {
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => setDebouncedSearch(val), 400);
   };
+
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<ApiExpenseRow | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<ApiExpenseRow | null>(null);
@@ -54,34 +77,47 @@ export default function Expenses() {
       const res = await expenseService.getAll({
         business: toggle.toUpperCase(),
         ...(debouncedSearch ? { search: debouncedSearch } : {}),
+        ...dateFilter,
       });
       setKpis(res.kpis);
       setRows(res.rows);
       setPagination(res.pagination);
+      setSelectedRowIds([]);
     } catch {
       message.error("Failed to load expenses");
     } finally {
       setLoading(false);
     }
-  }, [toggle, debouncedSearch]);
+  }, [toggle, debouncedSearch, dateFilter]);
 
-  useEffect(() => { fetch(); }, [fetch, toggle]);
+  useEffect(() => { fetch(); }, [fetch]);
+
+  const selectedRows = rows.filter((row) => selectedRowIds.includes(row.id));
 
   const openAdd = () => {
     setEditing(null);
     setCategory("");
     form.resetFields();
+    form.setFieldsValue({ expenseDate: dayjs() });
     setModalOpen(true);
   };
 
   const openEdit = (row: ApiExpenseRow) => {
     setEditing(row);
     let remarksVal = row.remarks;
-    let workerName = "", siteLocation = "";
+    let workerName = "";
+    let siteLocation = "";
     try {
       const parsed = JSON.parse(row.remarks);
-      if (parsed.__labour) { workerName = parsed.workerName ?? ""; siteLocation = parsed.siteLocation ?? ""; remarksVal = parsed.notes ?? ""; }
-    } catch { /* plain string */ }
+      if (parsed.__labour) {
+        workerName = parsed.workerName ?? "";
+        siteLocation = parsed.siteLocation ?? "";
+        remarksVal = parsed.notes ?? "";
+      }
+    } catch {
+      // Plain text remarks are valid.
+    }
+    setCategory(row.category);
     form.setFieldsValue({
       category: row.category,
       title: row.title,
@@ -128,6 +164,74 @@ export default function Expenses() {
     }
   };
 
+  const handleDownloadBill = async (row: ApiExpenseRow) => {
+    try {
+      const billSettings = await getFinanceBillSettings(toggle);
+      const billNumber = `EXP-${row.id.slice(0, 8).toUpperCase()}`;
+
+      downloadBillPdf({
+        title: "Expense Bill",
+        billNumber,
+        date: row.date,
+        business: billSettings.business,
+        partyLabel: "Expense Category",
+        partyName: row.category,
+        paymentMode: row.paymentMode,
+        reference: billNumber,
+        notes: expenseNotes(row),
+        items: [{
+          description: row.title,
+          quantity: 1,
+          rate: row.amountRaw,
+          amount: row.amountRaw,
+        }],
+        totalAmount: row.amountRaw,
+        footerNote: billSettings.footerNote,
+        terms: billSettings.terms,
+        fileName: `expense-bill-${billNumber}`,
+      });
+    } catch {
+      message.error("Unable to generate bill");
+    }
+  };
+
+  const handleDownloadSelected = async () => {
+    if (selectedRows.length === 0) {
+      message.warning("Select at least one expense");
+      return;
+    }
+    try {
+      const billSettings = await getFinanceBillSettings(toggle);
+      const billNumber = combinedBillNumber("EXP-COMBINED");
+      const totalAmount = selectedRows.reduce((sum, row) => sum + Number(row.amountRaw || 0), 0);
+      const modes = Array.from(new Set(selectedRows.map((row) => row.paymentMode)));
+
+      downloadBillPdf({
+        title: "Combined Expense Bill",
+        billNumber,
+        date: combinedBillDate(selectedRows.map((row) => row.date)),
+        business: billSettings.business,
+        partyLabel: "Selected Records",
+        partyName: `${selectedRows.length} expenses`,
+        paymentMode: modes.length === 1 ? modes[0] : "Multiple",
+        reference: billNumber,
+        notes: `Combined bill generated from ${selectedRows.length} selected expense records.`,
+        items: selectedRows.map((row) => ({
+          description: `${row.date} | ${row.category} | ${row.title}${row.remarks ? ` | ${expenseNotes(row)}` : ""}`,
+          quantity: 1,
+          rate: row.amountRaw,
+          amount: row.amountRaw,
+        })),
+        totalAmount,
+        footerNote: billSettings.footerNote,
+        terms: billSettings.terms,
+        fileName: `expense-combined-bill-${billNumber}`,
+      });
+    } catch {
+      message.error("Unable to generate combined bill");
+    }
+  };
+
   const handleDelete = async () => {
     if (!deleteTarget) return;
     try {
@@ -149,6 +253,7 @@ export default function Expenses() {
     amount: r.amount,
     actions: (
       <span className="flex gap-1 justify-end">
+        <Button variant="ghost" size="sm" icon={FileDown} onClick={() => handleDownloadBill(r)}>Bill</Button>
         <Button variant="ghost" size="sm" icon={Pencil} onClick={() => openEdit(r)} />
         <Button variant="ghost" size="sm" icon={Trash2} onClick={() => setDeleteTarget(r)} />
       </span>
@@ -159,8 +264,26 @@ export default function Expenses() {
     <div>
       <KpiRow items={kpis} />
       <Toolbar
-        left={<SearchBox value={search} onChange={handleSearch} placeholder="Search expenses…" />}
-        right={<Button variant="primary" size="sm" icon={Plus} onClick={openAdd}>Add Expense</Button>}
+        left={
+          <>
+            <SearchBox value={search} onChange={handleSearch} placeholder="Search expenses…" />
+            <FinanceDateFilter onChange={setDateFilter} />
+          </>
+        }
+        right={
+          <>
+            <Button
+              variant="ghost"
+              size="sm"
+              icon={FileDown}
+              disabled={selectedRows.length === 0}
+              onClick={handleDownloadSelected}
+            >
+              Download Selected ({selectedRows.length})
+            </Button>
+            <Button variant="primary" size="sm" icon={Plus} onClick={openAdd}>Add Expense</Button>
+          </>
+        }
       />
       <DataTable
         columns={COLUMNS}
@@ -169,6 +292,9 @@ export default function Expenses() {
         title="Expense History"
         subtitle={`${toggle === "paints" ? "Paints" : "Interiors"} business`}
         paginationText={pagination}
+        selectable
+        selectedRowIds={selectedRowIds}
+        onSelectionChange={setSelectedRowIds}
       />
 
       <AppModal

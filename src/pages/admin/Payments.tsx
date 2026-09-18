@@ -3,7 +3,7 @@ import { Plus, Pencil, Trash2, FileDown } from "lucide-react";
 import { Form, Input, InputNumber, Select, DatePicker, message } from "antd";
 import dayjs from "dayjs";
 import { useBusiness } from "@/hooks/useBusiness.ts";
-import { paymentService, settingsService, type ApiPaymentRecord } from "@/services/api";
+import { paymentService, type ApiPaymentRecord } from "@/services/api";
 import { Toolbar, SearchBox } from "@/components/common/Toolbar.tsx";
 import { Button } from "@/components/common/Button.tsx";
 import { Badge } from "@/components/common/Badge.tsx";
@@ -11,8 +11,10 @@ import { KpiRow } from "@/components/common/KpiCard";
 import { DataTable } from "@/components/common/DataTable";
 import { AppModal } from "@/components/common/AppModal";
 import { ConfirmDialog } from "@/components/common/ConfirmDialog";
+import { FinanceDateFilter, type FinanceDateFilterValue } from "@/components/common/DateFilter";
 import type { TableColumn, KpiItem } from "@/types/types";
 import { downloadBillPdf } from "@/utils/billPdf";
+import { combinedBillDate, combinedBillNumber, getFinanceBillSettings } from "@/utils/financeBill";
 
 const COLUMNS: TableColumn[] = [
   { key: "refNumber", label: "Ref #" },
@@ -34,6 +36,8 @@ export default function Payments() {
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [dateFilter, setDateFilter] = useState<FinanceDateFilterValue>({});
+  const [selectedRowIds, setSelectedRowIds] = useState<Array<string | number>>([]);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<ApiPaymentRecord | null>(null);
@@ -53,18 +57,22 @@ export default function Payments() {
       const res = await paymentService.getAll({
         business: toggle.toUpperCase(),
         search: debouncedSearch || undefined,
+        ...dateFilter,
       });
       setKpis(res.kpis);
       setRows(res.rows);
       setPagination(res.pagination);
+      setSelectedRowIds([]);
     } catch {
       message.error("Failed to load payments");
     } finally {
       setLoading(false);
     }
-  }, [toggle, debouncedSearch]);
+  }, [toggle, debouncedSearch, dateFilter]);
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
+
+  const selectedRows = rows.filter((row) => selectedRowIds.includes(row.id));
 
   const openAdd = (type: "Payment" | "Receipt") => {
     setEditing(null);
@@ -123,24 +131,14 @@ export default function Payments() {
 
   const handleDownloadBill = async (row: ApiPaymentRecord) => {
     try {
-      const settings = await settingsService.getSettings();
-      const prefix = toggle === 'paints' ? 'paints' : 'interiors';
-      const companyName = settings[`${prefix}_company_name`] || (toggle === 'paints' ? 'RJ Paints & Hardwares' : 'Styleo Interiors & Construction Works');
+      const billSettings = await getFinanceBillSettings(toggle);
 
       downloadBillPdf({
-        title: row.type === 'Receipt' ? 'Receipt Bill' : 'Payment Bill',
+        title: row.type === "Receipt" ? "Receipt Bill" : "Payment Bill",
         billNumber: row.refNumber,
         date: row.date,
-        business: {
-          name: companyName,
-          address: settings[`${prefix}_address`],
-          phone: settings[`${prefix}_phone`] || settings['paints_phone'],
-          email: settings[`${prefix}_email`],
-          gstNumber: settings[`${prefix}_gst`],
-          website: settings[`${prefix}_website`],
-          proprietor: settings['owner_name'],
-        },
-        partyLabel: row.type === 'Receipt' ? 'Received From' : 'Paid To',
+        business: billSettings.business,
+        partyLabel: row.type === "Receipt" ? "Received From" : "Paid To",
         partyName: row.party,
         paymentMode: row.paymentMode,
         reference: row.refNumber,
@@ -152,12 +150,50 @@ export default function Payments() {
           amount: row.amountRaw,
         }],
         totalAmount: row.amountRaw,
-        footerNote: settings['invoice_footer_note'],
-        terms: settings['invoice_terms'],
+        footerNote: billSettings.footerNote,
+        terms: billSettings.terms,
         fileName: `${row.type.toLowerCase()}-bill-${row.refNumber}`,
       });
     } catch {
-      message.error('Unable to generate bill');
+      message.error("Unable to generate bill");
+    }
+  };
+
+  const handleDownloadSelected = async () => {
+    if (selectedRows.length === 0) {
+      message.warning("Select at least one payment or receipt");
+      return;
+    }
+    try {
+      const billSettings = await getFinanceBillSettings(toggle);
+      const billNumber = combinedBillNumber("PAYMENTS-COMBINED");
+      const totalAmount = selectedRows.reduce((sum, row) => sum + Number(row.amountRaw || 0), 0);
+      const modes = Array.from(new Set(selectedRows.map((row) => row.paymentMode)));
+      const types = Array.from(new Set(selectedRows.map((row) => row.type)));
+
+      downloadBillPdf({
+        title: "Combined Payments & Receipts",
+        billNumber,
+        date: combinedBillDate(selectedRows.map((row) => row.date)),
+        business: billSettings.business,
+        partyLabel: "Selected Records",
+        partyName: `${selectedRows.length} payments / receipts`,
+        paymentMode: modes.length === 1 ? modes[0] : "Multiple",
+        reference: billNumber,
+        notes: `Combined bill for ${types.join(" & ")} (${selectedRows.length} selected records).`,
+        items: selectedRows.map((row) => ({
+          description: `${row.date} | ${row.refNumber} | ${row.type} | ${row.party}${row.notes ? ` | ${row.notes}` : ""}`,
+          quantity: 1,
+          rate: row.amountRaw,
+          amount: row.amountRaw,
+        })),
+        totalAmount,
+        footerNote: billSettings.footerNote,
+        terms: billSettings.terms,
+        fileName: `payments-combined-bill-${billNumber}`,
+      });
+    } catch {
+      message.error("Unable to generate combined bill");
     }
   };
 
@@ -194,9 +230,23 @@ export default function Payments() {
     <div>
       <KpiRow items={kpis} />
       <Toolbar
-        left={<SearchBox value={search} onChange={handleSearch} placeholder="Search payments…" />}
+        left={
+          <>
+            <SearchBox value={search} onChange={handleSearch} placeholder="Search payments…" />
+            <FinanceDateFilter onChange={setDateFilter} />
+          </>
+        }
         right={
           <>
+            <Button
+              variant="ghost"
+              size="sm"
+              icon={FileDown}
+              disabled={selectedRows.length === 0}
+              onClick={handleDownloadSelected}
+            >
+              Download Selected ({selectedRows.length})
+            </Button>
             <Button variant="ghost" size="sm" icon={Plus} onClick={() => openAdd("Payment")}>Record Payment</Button>
             <Button variant="primary" size="sm" icon={Plus} onClick={() => openAdd("Receipt")}>Record Receipt</Button>
           </>
@@ -209,6 +259,9 @@ export default function Payments() {
         title="Payments & Receipts"
         subtitle={`${toggle === "paints" ? "Paints" : "Interiors"} business`}
         paginationText={pagination}
+        selectable
+        selectedRowIds={selectedRowIds}
+        onSelectionChange={setSelectedRowIds}
       />
 
       <AppModal
