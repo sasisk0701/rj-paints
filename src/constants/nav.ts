@@ -39,6 +39,7 @@ export const NAV_ITEMS: NavItemType[] = [
   { key: "cash", label: "Cash", icon: Wallet },
   { key: "payments", label: "Payments & Receipts", icon: ArrowLeftRight },
   { key: "expenses", label: "Expenses", icon: Receipt },
+  { key: "staff-maintenance", label: "Staff Maintenance", icon: Users },
   { key: "reports", label: "Reports", icon: BarChart3 },
   { key: "users", label: "User Management", icon: UserCog },
   { key: "settings", label: "Settings", icon: Settings },
@@ -51,7 +52,7 @@ export const NAV_GROUPS: NavGroupType[] = [
   { label: "Inventory", keys: ["stock", "stock-in", "stock-out", "stock-maintenance"] },
   { label: "Trade", keys: ["purchases", "sales", "quotations"] },
   { label: "Contacts", keys: ["customers", "suppliers"] },
-  { label: "Finance", keys: ["bank", "cash", "payments", "expenses"] },
+  { label: "Finance", keys: ["bank", "cash", "payments", "expenses", "staff-maintenance"] },
   { label: "Insights", keys: ["reports"] },
   { label: "Administration", keys: ["users", "settings", "activity-log"] },
 ];

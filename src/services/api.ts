@@ -699,3 +699,109 @@ export const databaseBackupService = {
     }
   },
 };
+
+
+
+// ─── Staff Maintenance (API-backed) ───────────────────────────────────────
+export type ApiStaffBusiness = 'PAINTS' | 'INTERIORS' | 'BOTH';
+export type ApiStaffStatus = 'ACTIVE' | 'INACTIVE';
+
+export interface ApiStaff {
+  id: string;
+  name: string;
+  phone: string | null;
+  designation: string | null;
+  business: ApiStaffBusiness;
+  dailyRate: number | null;
+  status: ApiStaffStatus | string;
+  createdAt: string;
+  updatedAt: string;
+  deletedAt: string | null;
+}
+
+export interface ApiStaffWorkLog {
+  id: string;
+  staffId: string;
+  workDate: string;
+  hoursWorked: number;
+  workType: string | null;
+  notes: string | null;
+  createdAt: string;
+  updatedAt: string;
+  staff: ApiStaff;
+}
+
+export interface ApiStaffWorkEntry {
+  staffId: string;
+  hoursWorked: number;
+  workType?: string;
+  notes?: string;
+}
+
+export const staffService = {
+  getAll: async (params?: { business?: string; search?: string; status?: string }): Promise<ApiStaff[]> => {
+    const { data } = await axiosClient.get('/api/admin/staff', { params });
+    return data;
+  },
+
+  create: async (payload: {
+    name: string;
+    phone?: string;
+    designation?: string;
+    business: ApiStaffBusiness;
+    dailyRate?: number | null;
+    status?: ApiStaffStatus;
+  }): Promise<ApiStaff> => {
+    const { data } = await axiosClient.post('/api/admin/staff', payload);
+    return data;
+  },
+
+  update: async (
+    id: string,
+    payload: Partial<{
+      name: string;
+      phone: string;
+      designation: string;
+      business: ApiStaffBusiness;
+      dailyRate: number | null;
+      status: ApiStaffStatus;
+    }>
+  ): Promise<ApiStaff> => {
+    const { data } = await axiosClient.put(`/api/admin/staff/${id}`, payload);
+    return data;
+  },
+
+  remove: async (id: string): Promise<void> => {
+    await axiosClient.delete(`/api/admin/staff/${id}`);
+  },
+
+  getLogs: async (params?: {
+    business?: string;
+    date?: string;
+    from?: string;
+    to?: string;
+    staffId?: string;
+  }): Promise<ApiStaffWorkLog[]> => {
+    const { data } = await axiosClient.get('/api/admin/staff-work-log', { params });
+    return data;
+  },
+
+  saveLog: async (payload: {
+    staffId: string;
+    workDate: string;
+    hoursWorked: number;
+    workType?: string;
+    notes?: string;
+  }): Promise<ApiStaffWorkLog> => {
+    const { data } = await axiosClient.post('/api/admin/staff-work-log', payload);
+    return data;
+  },
+
+  saveDaily: async (payload: {
+    workDate: string;
+    records: ApiStaffWorkEntry[];
+  }): Promise<ApiStaffWorkLog[]> => {
+    const { data } = await axiosClient.post('/api/admin/staff-work-log/bulk', payload);
+    return data;
+  },
+};

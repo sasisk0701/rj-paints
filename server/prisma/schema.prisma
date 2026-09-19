@@ -383,3 +383,32 @@ model ActivityLog {
   business  String   @default("paints")
   createdAt DateTime @default(now())
 }
+
+model Staff {
+  id          String        @id @default(uuid())
+  name        String
+  phone       String?
+  designation String?
+  business    BusinessType  @default(PAINTS)
+  dailyRate   Float?
+  status      String        @default("ACTIVE")
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  deletedAt   DateTime?
+  workLogs    StaffWorkLog[]
+
+  @@index([business, status])
+}
+
+model StaffWorkLog {
+  id           String   @id @default(uuid())
+  staffId      String
+  staff        Staff    @relation(fields:[staffId], references:[id], onDelete:Cascade)
+  workDate     DateTime
+  hoursWorked  Float
+  workType     String?
+  notes        String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  @@unique([staffId, workDate])
+}

@@ -90,6 +90,347 @@ async function ensureStockInSupplierNameColumn() {
   }
 }
 
+
+// ─── Staff Maintenance ─────────────────────────────────────────────────────
+const STAFF_BUSINESSES = ['PAINTS', 'INTERIORS', 'BOTH'] as const;
+
+function normalizeStaffBusiness(value: unknown) {
+  const normalized = String(value || '').trim().toUpperCase();
+  return STAFF_BUSINESSES.includes(normalized as any) ? normalized : null;
+}
+
+function parseStaffWorkDate(value: unknown) {
+  const raw = String(value || '').trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) return null;
+  const parsed = new Date(`${raw}T00:00:00.000Z`);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function staffBusinessScope(value: unknown) {
+  const business = normalizeStaffBusiness(value);
+  if (!business) return undefined;
+  if (business === 'BOTH') return ['PAINTS', 'INTERIORS', 'BOTH'];
+  return [business, 'BOTH'];
+}
+
+app.get('/api/admin/staff', authenticateJWT, async (req, res) => {
+  try {
+    const { business, search, status } = req.query as Record<string, string>;
+    const scope = staffBusinessScope(business);
+    const where: any = { deletedAt: null };
+
+    if (scope) where.business = { in: scope };
+    if (status) where.status = String(status).toUpperCase();
+    if (search?.trim()) {
+      where.OR = [
+        { name: { contains: search.trim() } },
+        { phone: { contains: search.trim() } },
+        { designation: { contains: search.trim() } },
+      ];
+    }
+
+    const rows = await prisma.staff.findMany({
+      where,
+      orderBy: [{ status: 'asc' }, { name: 'asc' }],
+    });
+
+    res.json(rows);
+  } catch (error) {
+    console.error('Failed to load staff:', error);
+    res.status(500).json({ error: 'Failed to load staff' });
+  }
+});
+
+app.post('/api/admin/staff', authenticateJWT, async (req: AuthRequest, res) => {
+  try {
+    const { name, phone, designation, business, dailyRate, status } = req.body;
+    const normalizedBusiness = normalizeStaffBusiness(business);
+
+    if (!String(name || '').trim() || !normalizedBusiness) {
+      return res.status(400).json({ error: 'name and valid business are required' });
+    }
+
+    const rate = dailyRate === '' || dailyRate === null || dailyRate === undefined
+      ? null
+      : Number(dailyRate);
+    if (rate !== null && (!Number.isFinite(rate) || rate < 0)) {
+      return res.status(400).json({ error: 'dailyRate must be a valid non-negative number' });
+    }
+
+    const row = await prisma.staff.create({
+      data: {
+        name: String(name).trim(),
+        phone: phone ? String(phone).trim() : null,
+        designation: designation ? String(designation).trim() : null,
+        business: normalizedBusiness as any,
+        dailyRate: rate,
+        status: String(status || 'ACTIVE').toUpperCase(),
+      },
+    });
+
+    await prisma.activityLog.create({
+      data: {
+        userId: req.user.id,
+        userName: req.user.name,
+        action: 'Staff Created',
+        module: 'Finance',
+        reference: row.name,
+        business: normalizedBusiness.toLowerCase(),
+      },
+    });
+
+    res.status(201).json(row);
+  } catch (error: any) {
+    console.error('Failed to create staff:', error);
+    res.status(400).json({ error: error?.message || 'Failed to create staff' });
+  }
+});
+
+app.put('/api/admin/staff/:id', authenticateJWT, async (req: AuthRequest, res) => {
+  try {
+    const existing = await prisma.staff.findFirst({
+      where: { id: req.params.id, deletedAt: null },
+    });
+    if (!existing) return res.status(404).json({ error: 'Staff not found' });
+
+    const { name, phone, designation, business, dailyRate, status } = req.body;
+    const normalizedBusiness = business === undefined ? existing.business : normalizeStaffBusiness(business);
+    if (!normalizedBusiness) return res.status(400).json({ error: 'Invalid business' });
+
+    const rate = dailyRate === undefined
+      ? existing.dailyRate
+      : dailyRate === '' || dailyRate === null
+        ? null
+        : Number(dailyRate);
+    if (rate !== null && (!Number.isFinite(Number(rate)) || Number(rate) < 0)) {
+      return res.status(400).json({ error: 'dailyRate must be a valid non-negative number' });
+    }
+
+    const row = await prisma.staff.update({
+      where: { id: req.params.id },
+      data: {
+        ...(name !== undefined ? { name: String(name).trim() } : {}),
+        ...(phone !== undefined ? { phone: phone ? String(phone).trim() : null } : {}),
+        ...(designation !== undefined ? { designation: designation ? String(designation).trim() : null } : {}),
+        business: normalizedBusiness as any,
+        dailyRate: rate === null ? null : Number(rate),
+        ...(status !== undefined ? { status: String(status).toUpperCase() } : {}),
+      },
+    });
+
+    await prisma.activityLog.create({
+      data: {
+        userId: req.user.id,
+        userName: req.user.name,
+        action: 'Staff Updated',
+        module: 'Finance',
+        reference: row.name,
+        business: String(row.business).toLowerCase(),
+      },
+    });
+
+    res.json(row);
+  } catch (error: any) {
+    console.error('Failed to update staff:', error);
+    res.status(400).json({ error: error?.message || 'Failed to update staff' });
+  }
+});
+
+app.delete('/api/admin/staff/:id', authenticateJWT, async (req: AuthRequest, res) => {
+  try {
+    const existing = await prisma.staff.findFirst({
+      where: { id: req.params.id, deletedAt: null },
+    });
+    if (!existing) return res.status(404).json({ error: 'Staff not found' });
+
+    await prisma.staff.update({
+      where: { id: req.params.id },
+      data: { deletedAt: new Date(), status: 'INACTIVE' },
+    });
+
+    await prisma.activityLog.create({
+      data: {
+        userId: req.user.id,
+        userName: req.user.name,
+        action: 'Staff Removed',
+        module: 'Finance',
+        reference: existing.name,
+        business: String(existing.business).toLowerCase(),
+      },
+    });
+
+    res.json({ message: 'Staff removed' });
+  } catch (error) {
+    console.error('Failed to remove staff:', error);
+    res.status(500).json({ error: 'Failed to remove staff' });
+  }
+});
+
+app.get('/api/admin/staff-work-log', authenticateJWT, async (req, res) => {
+  try {
+    const { business, date, from, to, staffId } = req.query as Record<string, string>;
+    const scope = staffBusinessScope(business);
+    const where: any = {};
+
+    if (staffId) where.staffId = staffId;
+    if (scope) where.staff = { is: { business: { in: scope } } };
+
+    if (date) {
+      const workDate = parseStaffWorkDate(date);
+      if (!workDate) return res.status(400).json({ error: 'Invalid date. Use YYYY-MM-DD.' });
+      where.workDate = workDate;
+    } else if (from || to) {
+      const fromDate = from ? parseStaffWorkDate(from) : null;
+      const toDate = to ? parseStaffWorkDate(to) : null;
+      if ((from && !fromDate) || (to && !toDate)) {
+        return res.status(400).json({ error: 'Invalid date range. Use YYYY-MM-DD.' });
+      }
+      where.workDate = {
+        ...(fromDate ? { gte: fromDate } : {}),
+        ...(toDate ? { lte: toDate } : {}),
+      };
+    }
+
+    const rows = await prisma.staffWorkLog.findMany({
+      where,
+      include: { staff: true },
+      orderBy: [{ workDate: 'desc' }, { staff: { name: 'asc' } }],
+    });
+
+    res.json(rows);
+  } catch (error) {
+    console.error('Failed to load staff work logs:', error);
+    res.status(500).json({ error: 'Failed to load staff work logs' });
+  }
+});
+
+app.post('/api/admin/staff-work-log', authenticateJWT, async (req: AuthRequest, res) => {
+  try {
+    const { staffId, workDate, hoursWorked, workType, notes } = req.body;
+    const normalizedDate = parseStaffWorkDate(workDate);
+    const hours = Number(hoursWorked);
+
+    if (!staffId || !normalizedDate) {
+      return res.status(400).json({ error: 'staffId and workDate (YYYY-MM-DD) are required' });
+    }
+    if (!Number.isFinite(hours) || hours < 0 || hours > 24) {
+      return res.status(400).json({ error: 'hoursWorked must be between 0 and 24' });
+    }
+
+    const staff = await prisma.staff.findFirst({ where: { id: staffId, deletedAt: null } });
+    if (!staff) return res.status(404).json({ error: 'Staff not found' });
+
+    const row = await prisma.staffWorkLog.upsert({
+      where: {
+        staffId_workDate: {
+          staffId,
+          workDate: normalizedDate
+        }
+      },
+      update: {
+        hoursWorked: hours,
+        workType: workType ? String(workType).trim() : null,
+        notes: notes ? String(notes).trim() : null,
+      },
+      create: {
+        staffId,
+        workDate: normalizedDate,
+        hoursWorked: hours,
+        workType: workType ? String(workType).trim() : null,
+        notes: notes ? String(notes).trim() : null,
+      },
+      include: {
+        staff: true
+      }
+    });
+
+    res.json(row);
+  } catch (error: any) {
+    console.error('Failed to save staff work log:', error);
+    res.status(400).json({ error: error?.message || 'Failed to save staff work log' });
+  }
+});
+
+app.post('/api/admin/staff-work-log/bulk', authenticateJWT, async (req: AuthRequest, res) => {
+  try {
+    const { workDate, records } = req.body as {
+      workDate?: string;
+      records?: Array<{ staffId: string; hoursWorked: number; workType?: string; notes?: string }>;
+    };
+
+    const normalizedDate = parseStaffWorkDate(workDate);
+    if (!normalizedDate || !Array.isArray(records) || records.length === 0) {
+      return res.status(400).json({ error: 'workDate and at least one record are required' });
+    }
+
+    const sanitized = records.map((record) => ({
+      staffId: String(record.staffId || ''),
+      hoursWorked: Number(record.hoursWorked),
+      workType: record.workType ? String(record.workType).trim() : null,
+      notes: record.notes ? String(record.notes).trim() : null,
+    }));
+
+    if (sanitized.some((record) => !record.staffId || !Number.isFinite(record.hoursWorked) || record.hoursWorked < 0 || record.hoursWorked > 24)) {
+      return res.status(400).json({ error: 'Each record needs a valid staffId and hoursWorked between 0 and 24' });
+    }
+
+    const uniqueStaffIds = Array.from(new Set(sanitized.map((record) => record.staffId)));
+    const activeStaff = await prisma.staff.findMany({
+      where: { id: { in: uniqueStaffIds }, deletedAt: null },
+      select: { id: true, name: true, business: true },
+    });
+    if (activeStaff.length !== uniqueStaffIds.length) {
+      return res.status(400).json({ error: 'One or more staff records are invalid or inactive' });
+    }
+
+    await prisma.$transaction(
+      sanitized.map((record) =>
+        prisma.staffWorkLog.upsert({
+          where: {
+            staffId_workDate: {
+              staffId: record.staffId,
+              workDate: normalizedDate,
+            },
+          },
+          update: {
+            hoursWorked: record.hoursWorked,
+            workType: record.workType,
+            notes: record.notes,
+          },
+          create: {
+            staffId: record.staffId,
+            workDate: normalizedDate,
+            hoursWorked: record.hoursWorked,
+            workType: record.workType,
+            notes: record.notes,
+          },
+        })
+      )
+    );
+
+    await prisma.activityLog.create({
+      data: {
+        userId: req.user.id,
+        userName: req.user.name,
+        action: 'Daily Staff Hours Saved',
+        module: 'Finance',
+        reference: `${workDate} (${sanitized.length} staff)`,
+      },
+    });
+
+    const saved = await prisma.staffWorkLog.findMany({
+      where: { workDate: normalizedDate, staffId: { in: uniqueStaffIds } },
+      include: { staff: true },
+      orderBy: { staff: { name: 'asc' } },
+    });
+
+    res.json(saved);
+  } catch (error: any) {
+    console.error('Failed to save daily staff records:', error);
+    res.status(400).json({ error: error?.message || 'Failed to save daily staff records' });
+  }
+});
+
 // ─── Health ────────────────────────────────────────────────────────────────
 app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok', service: 'RJ Paints & Styleo Interiors API' });

@@ -43,6 +43,7 @@ import Reports from './pages/admin/Reports.tsx';
 import UsersPage from "./pages/admin/Users.tsx";
 import Settings from './pages/admin/Settings.tsx';
 import ActivityLog from './pages/admin/ActivityLog.tsx';
+import StaffMaintenance from './pages/admin/StaffMaintenance.tsx';
 
 
 // Dynamic Home Selector Component
@@ -125,6 +126,7 @@ export const App: React.FC = () => {
             <Route path="cash" element={<Cash />} />
             <Route path="payments" element={<Payments />} />
             <Route path="expenses" element={<Expenses />} />
+            <Route path="staff-maintenance" element={<StaffMaintenance />} />
             <Route path="reports" element={<Reports />} />
             <Route path="users" element={<UsersPage />} />
             <Route path="settings" element={<Settings />} />
