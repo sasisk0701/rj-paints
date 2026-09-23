@@ -605,10 +605,10 @@ app.get('/api/categories', authenticateJWT, async (req, res) => {
 });
 
 app.post('/api/categories', authenticateJWT, async (req: AuthRequest, res) => {
-  const { name, business, description, color } = req.body;
+  const { name, business, description, hsn } = req.body;
   if (!name || !business) return res.status(400).json({ error: 'name and business are required' });
   const cat = await prisma.category.create({
-    data: { name, business: business.toUpperCase(), description, color: color || '#6B7280' },
+    data: { name, business: business.toUpperCase(), description, hsn: hsn || null },
   });
   await prisma.activityLog.create({
     data: { userId: req.user.id, userName: req.user.name, action: 'Category Created', module: 'Catalog', reference: name },
@@ -617,10 +617,10 @@ app.post('/api/categories', authenticateJWT, async (req: AuthRequest, res) => {
 });
 
 app.put('/api/categories/:id', authenticateJWT, async (req: AuthRequest, res) => {
-  const { name, description, color } = req.body;
+  const { name, description, hsn } = req.body;
   const cat = await prisma.category.update({
     where: { id: req.params.id },
-    data: { name, description, color },
+    data: { name, description, hsn },
   });
   await prisma.activityLog.create({
     data: { userId: req.user.id, userName: req.user.name, action: 'Category Updated', module: 'Catalog', reference: name },
@@ -671,7 +671,7 @@ app.get('/api/products', authenticateJWT, async (req, res) => {
   ];
   const products = await prisma.product.findMany({
     where,
-    include: { category: { select: { id: true, name: true, color: true } } },
+    include: { category: { select: { id: true, name: true } } },
     orderBy: { createdAt: 'desc' },
   });
   res.json(products);
@@ -689,10 +689,8 @@ app.get('/api/products/:id', authenticateJWT, async (req, res) => {
 app.post('/api/products', authenticateJWT, async (req: AuthRequest, res) => {
   const { name, categoryId, categoryName, brand, sku, barcode, description,
           purchasePrice, sellingPrice, gstRate, stock, minStock, unit, business, image } = req.body;
-  if (!name || !sku || !barcode || !business)
-    return res.status(400).json({ error: 'name, sku, barcode and business are required' });
-  const exists = await prisma.product.findFirst({ where: { OR: [{ sku }, { barcode }] } });
-  if (exists) return res.status(409).json({ error: 'SKU or Barcode already exists' });
+  if (!name || !business)
+    return res.status(400).json({ error: 'name and business are required' });
   const status = stock <= 0 ? 'Out of Stock' : stock <= minStock ? 'Low Stock' : 'In Stock';
   const product = await prisma.product.create({
     data: { name, categoryId, categoryName: categoryName || '', brand, sku, barcode,
@@ -701,7 +699,7 @@ app.post('/api/products', authenticateJWT, async (req: AuthRequest, res) => {
             unit: unit || 'Piece', business: business.toUpperCase(), status, image },
   });
   await prisma.activityLog.create({
-    data: { userId: req.user.id, userName: req.user.name, action: 'Product Created', module: 'Catalog', reference: sku, business: business.toLowerCase() },
+    data: { userId: req.user.id, userName: req.user.name, action: 'Product Created', module: 'Catalog', reference: name, business: business.toLowerCase() },
   });
   res.status(201).json(product);
 });
@@ -2008,8 +2006,8 @@ app.get('/api/reports/:type', authenticateJWT, async (req, res) => {
         const products = await prisma.product.findMany({ where, orderBy: { name: 'asc' } });
         return res.json({
           title: 'Current Stock Report',
-          columns: ['Product', 'SKU', 'Brand', 'Stock', 'Min Stock', 'Status', 'Value'],
-          rows: products.map(p => [p.name, p.sku, p.brand, String(p.stock), String(p.minStock), p.status, formatCurrency(p.stock * p.sellingPrice)]),
+          columns: ['Product', 'Brand', 'Stock', 'Min Stock', 'Status', 'Value'],
+          rows: products.map(p => [p.name, p.brand, String(p.stock), String(p.minStock), p.status, formatCurrency(p.stock * p.sellingPrice)]),
           summary: { 'Total SKUs': products.length, 'Total Stock Value': formatCurrency(products.reduce((s, p) => s + p.stock * p.sellingPrice, 0)), 'Low Stock Items': products.filter(p => p.stock > 0 && p.stock <= p.minStock).length },
         });
       }
@@ -2049,8 +2047,8 @@ app.get('/api/reports/:type', authenticateJWT, async (req, res) => {
         );
         return res.json({
           title: 'Low Stock Report',
-          columns: ['Product', 'SKU', 'Brand', 'Current Stock', 'Min Stock', 'Status'],
-          rows: lowStockProducts.map((p: any) => [p.name, p.sku, p.brand, String(p.stock), String(p.minStock), 'Low Stock']),
+          columns: ['Product', 'Brand', 'Current Stock', 'Min Stock', 'Status'],
+          rows: lowStockProducts.map((p: any) => [p.name, p.brand, String(p.stock), String(p.minStock), 'Low Stock']),
           summary: { 'Low Stock Items': lowStockProducts.length },
         });
       }

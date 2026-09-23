@@ -11,12 +11,6 @@ import { KpiRow } from '@/components/common/KpiCard';
 import { AppModal } from '@/components/common/AppModal';
 import { ConfirmDialog } from '@/components/common/ConfirmDialog';
 
-const COLOR_PRESETS = [
-  '#8FD3C0', '#4A90D9', '#C97B4C', '#B65454', '#2A2A2A',
-  '#9C8CD6', '#6B7280', '#5B7FBE', '#D9C27E', '#7A9E7E',
-  '#E8A87C', '#A0785A', '#F59E0B', '#10B981', '#EF4444',
-];
-
 export default function Categories() {
   const { toggle } = useBusiness();
 
@@ -27,7 +21,6 @@ export default function Categories() {
   const [editing, setEditing]         = useState<ApiCategory | null>(null);
   const [saving, setSaving]           = useState(false);
   const [deleting, setDeleting]       = useState(false);
-  const [selectedColor, setSelectedColor] = useState(COLOR_PRESETS[0]);
   const [form] = Form.useForm();
 
   const fetchCategories = async () => {
@@ -45,19 +38,18 @@ export default function Categories() {
 
   const openAdd = () => {
     setEditing(null);
-    setSelectedColor(COLOR_PRESETS[0]);
     form.resetFields();
-    form.setFieldsValue({ business: toggle.toUpperCase(), color: COLOR_PRESETS[0] });
+    form.setFieldsValue({ business: toggle.toUpperCase() });
     setModalOpen(true);
   };
 
   const openEdit = (cat: ApiCategory) => {
     setEditing(cat);
-    setSelectedColor(cat.color);
     form.setFieldsValue({
       name: cat.name,
       business: cat.business,
       description: cat.description ?? '',
+      hsn: cat.hsn ?? '',
     });
     setModalOpen(true);
   };
@@ -66,7 +58,7 @@ export default function Categories() {
     try {
       const values = await form.validateFields();
       setSaving(true);
-      const payload = { ...values, color: selectedColor };
+      const payload = { ...values };
       if (editing) {
         await categoryService.update(editing.id, payload);
         message.success('Category updated successfully');
@@ -132,7 +124,7 @@ export default function Categories() {
           {categories.map((cat) => (
             <Panel key={cat.id} className="p-4">
               <div className="flex items-start gap-3">
-                <div className="w-10 h-10 rounded-xl flex-none shadow-sm" style={{ backgroundColor: cat.color }} />
+                {/* <div className="w-10 h-10 rounded-xl flex-none shadow-sm" style={{ backgroundColor: cat.color }} /> */}
                 <div className="flex-1 min-w-0">
                   <div className="font-semibold text-ink truncate">{cat.name}</div>
                   <div className="text-[11.5px] text-ink-3 mt-0.5">
@@ -187,27 +179,10 @@ export default function Categories() {
             <Input.TextArea rows={2} placeholder="Short description of this category…" />
           </Form.Item>
 
-          <Form.Item label="Color">
-            <div className="flex flex-wrap gap-2 mt-1">
-              {COLOR_PRESETS.map((c) => (
-                <button
-                  key={c}
-                  type="button"
-                  onClick={() => setSelectedColor(c)}
-                  className="w-8 h-8 rounded-lg border-2 transition-all"
-                  style={{
-                    backgroundColor: c,
-                    borderColor: selectedColor === c ? '#1f2937' : 'transparent',
-                    transform: selectedColor === c ? 'scale(1.15)' : 'scale(1)',
-                  }}
-                />
-              ))}
-            </div>
-            <div className="flex items-center gap-2 mt-3">
-              <div className="w-5 h-5 rounded-md" style={{ backgroundColor: selectedColor }} />
-              <span className="text-xs text-ink-3 font-mono">{selectedColor}</span>
-            </div>
+          <Form.Item name="hsn" label="HSN Code">
+            <Input placeholder="Enter HSN code" />
           </Form.Item>
+
         </Form>
       </AppModal>
 

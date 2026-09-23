@@ -35,8 +35,9 @@ model Product {
   category      Category?    @relation(fields: [categoryId], references: [id])
   categoryName  String
   brand         String
-  sku           String       @unique
-  barcode       String       @unique
+  color         String       @default("")
+  sku           String?
+  barcode       String?
   description   String?      @db.Text
   purchasePrice Float
   sellingPrice  Float
@@ -63,7 +64,7 @@ model Category {
   name        String
   business    BusinessType @default(PAINTS)
   description String?      @db.Text
-  color       String       @default("#6B7280")
+  hsn         String       @default("")
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
   deletedAt   DateTime?

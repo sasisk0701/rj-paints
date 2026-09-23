@@ -18,6 +18,7 @@ const COLUMNS: TableColumn[] = [
   { key: 'image',    label: 'Image' },
   { key: 'product',  label: 'Product' },
   { key: 'category', label: 'Category' },
+  { key: 'color',    label: 'Color' },
   { key: 'brand',    label: 'Brand' },
   { key: 'unit',     label: 'Unit' },
   { key: 'cost',     label: 'Cost',          align: 'num' },
@@ -111,8 +112,8 @@ export default function Products() {
   const openEdit = (p: ApiProduct) => {
     setEditing(p);
     form.setFieldsValue({
-      name: p.name, categoryId: p.categoryId, brand: p.brand,
-      sku: p.sku, barcode: p.barcode, description: p.description ?? '',
+      name: p.name, categoryId: p.categoryId, brand: p.brand, color: p.color ?? '',
+      description: p.description ?? '',
       purchasePrice: p.purchasePrice, sellingPrice: p.sellingPrice,
       gstRate: p.gstRate, stock: p.stock, minStock: p.minStock,
       unit: p.unit, business: p.business,
@@ -200,9 +201,9 @@ export default function Products() {
 
   const handleExport = () => {
     if (!products.length) { message.warning('No products to export'); return; }
-    const header = 'Name,SKU,Barcode,Category,Brand,Unit,Purchase Price,Selling Price,GST%,Stock,Min Stock,Status\n';
+    const header = 'Name,Category,Color,Brand,Unit,Purchase Price,Selling Price,GST%,Stock,Min Stock,Status\n';
     const csv = products.map((p) =>
-      `"${p.name}","${p.sku}","${p.barcode}","${p.categoryName}","${p.brand}","${p.unit}",${p.purchasePrice},${p.sellingPrice},${p.gstRate},${p.stock},${p.minStock},"${p.status}"`
+      `"${p.name}","${p.categoryName}","${p.color ?? ''}","${p.brand}","${p.unit}",${p.purchasePrice},${p.sellingPrice},${p.gstRate},${p.stock},${p.minStock},"${p.status}"`
     ).join('\n');
     const blob = new Blob([header + csv], { type: 'text/csv' });
     const url  = URL.createObjectURL(blob);
@@ -245,13 +246,14 @@ export default function Products() {
       ),
       product: (
         <CellItem
-          icon={<Swatch color={p.category?.color ?? '#6B7280'} />}
+          icon={<Swatch color={p.color || '#6B7280'} />}
           name={p.name}
-          sub={p.sku}
+          sub={p.color || ''}
           mono
         />
       ),
       category: p.categoryName,
+      color:    p.color ?? '',
       brand:    p.brand,
       unit:     p.unit,
       cost:     `₹${p.purchasePrice.toLocaleString('en-IN')}`,
@@ -293,7 +295,7 @@ export default function Products() {
               options={['In Stock', 'Low Stock', 'Out of Stock'].map((s) => ({ label: s, value: s }))}
             />
             <SearchBox
-              placeholder="Search name, SKU, brand…"
+              placeholder="Search name, color, brand…"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
@@ -345,12 +347,8 @@ export default function Products() {
               <Input placeholder="e.g. Asian Paints" />
             </Form.Item>
 
-            <Form.Item name="sku" label="SKU Code" rules={[{ required: true, message: 'Required' }]}>
-              <Input placeholder="e.g. AP-ROY-SILK-20L" />
-            </Form.Item>
-
-            <Form.Item name="barcode" label="Barcode" rules={[{ required: true, message: 'Required' }]}>
-              <Input placeholder="e.g. 890123456781" />
+            <Form.Item name="color" label="Color">
+              <Input placeholder="e.g. White, Royal Blue" />
             </Form.Item>
 
             <Form.Item name="purchasePrice" label="Purchase Price (₹)" rules={[{ required: true, message: 'Required' }]}>
@@ -366,7 +364,7 @@ export default function Products() {
             </Form.Item>
 
             <Form.Item name="unit" label="Unit" rules={[{ required: true, message: 'Required' }]}>
-              <Select placeholder="Select unit" options={UNITS.map((u) => ({ label: u, value: u }))} />
+              <Input placeholder="e.g. Liter, Kg, Piece" />
             </Form.Item>
 
             <Form.Item name="stock" label="Opening Stock">

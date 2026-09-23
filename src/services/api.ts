@@ -96,18 +96,18 @@ export const settingsService = {
 // ─── Categories ──────────────────────────────────────────────────────────────
 export interface ApiCategory {
   id: string; name: string; business: string; description: string | null;
-  color: string; createdAt: string; _count?: { products: number };
+  hsn: string; createdAt: string; _count?: { products: number };
 }
 export const categoryService = {
   getAll: async (business?: string): Promise<ApiCategory[]> => {
     const { data } = await axiosClient.get('/api/categories', { params: business ? { business } : {} });
     return data;
   },
-  create: async (payload: { name: string; business: string; description?: string; color?: string }) => {
+  create: async (payload: { name: string; business: string; description?: string; hsn?: string }) => {
     const { data } = await axiosClient.post('/api/categories', payload);
     return data as ApiCategory;
   },
-  update: async (id: string, payload: { name?: string; description?: string; color?: string }) => {
+  update: async (id: string, payload: { name?: string; description?: string; hsn?: string }) => {
     const { data } = await axiosClient.put(`/api/categories/${id}`, payload);
     return data as ApiCategory;
   },
@@ -117,11 +117,11 @@ export const categoryService = {
 // ─── Products (API) ───────────────────────────────────────────────────────────
 export interface ApiProduct {
   id: string; name: string; categoryId: string | null; categoryName: string;
-  brand: string; sku: string; barcode: string; description: string | null;
+  brand: string; color: string; sku?: string; barcode?: string; description: string | null;
   purchasePrice: number; sellingPrice: number; gstRate: number;
   stock: number; minStock: number; unit: string; image: string | null;
   business: string; status: string; createdAt: string; updatedAt: string;
-  category?: { id: string; name: string; color: string } | null;
+  category?: { id: string; name: string } | null;
 }
 const fileToBase64 = (file: File): Promise<string> => new Promise((resolve, reject) => {
   const reader = new FileReader();
