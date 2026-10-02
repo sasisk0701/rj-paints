@@ -1,0 +1,1 @@
+ALTER TABLE `PurchaseItem` ADD COLUMN `cashDiscountPercent` DOUBLE NOT NULL DEFAULT 0;

@@ -28,7 +28,7 @@ type StockInFormValues = {
   purchaseDate: string;
   paymentMode: string;
   notes?: string;
-  items: Array<{ productId: string; quantity: number }>;
+  items: Array<{ productId: string; quantity: number; hsn?: string }>;
 };
 
 const PAYMENT_OPTIONS = ["Cash", "UPI", "Cheque", "Bank Transfer", "Credit"];
@@ -102,7 +102,7 @@ export default function StockIn() {
       purchaseDate: new Date().toISOString().split("T")[0],
       paymentMode: "Bank Transfer",
       notes: "",
-      items: [{ productId: "", quantity: 1 }],
+      items: [{ productId: "", quantity: 1, hsn: "" }],
     });
     setModalOpen(true);
   };
@@ -120,6 +120,7 @@ export default function StockIn() {
         items: values.items.map((item) => ({
           productId: item.productId,
           quantity: Number(item.quantity || 0),
+          hsn: item.hsn || products.find((product) => product.id === item.productId)?.hsn || '',
         })),
       });
       message.success("Stock in saved successfully");
@@ -223,7 +224,7 @@ export default function StockIn() {
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
                   <div className="text-xs font-bold uppercase tracking-widest text-ink-3">Items</div>
-                  <Button type="button" variant="ghost" size="sm" icon={Plus} onClick={() => add({ productId: "", quantity: 1 })}>
+                  <Button type="button" variant="ghost" size="sm" icon={Plus} onClick={() => add({ productId: "", quantity: 1, hsn: "" })}>
                     Add Item
                   </Button>
                 </div>
@@ -233,15 +234,27 @@ export default function StockIn() {
                       name={[field.name, "productId"]}
                       label="Product"
                       rules={[{ required: true, message: "Select product" }]}
-                      className="col-span-12 md:col-span-7"
+                      className="col-span-12 md:col-span-5"
                     >
-                      <Select placeholder="Choose product" options={productOptions} showSearch optionFilterProp="label" />
+                      <Select
+                        placeholder="Choose product"
+                        options={productOptions}
+                        showSearch
+                        optionFilterProp="label"
+                        onChange={(productId) => {
+                          const product = products.find((item) => item.id === productId);
+                          if (product) form.setFieldValue(["items", field.name, "hsn"], product.hsn || "");
+                        }}
+                      />
+                    </Form.Item>
+                    <Form.Item name={[field.name, "hsn"]} label="HSN Code" className="col-span-6 md:col-span-3">
+                      <Input placeholder="HSN code" />
                     </Form.Item>
                     <Form.Item
                       name={[field.name, "quantity"]}
                       label="Qty"
                       rules={[{ required: true, message: "Required" }]}
-                      className="col-span-6 md:col-span-3"
+                      className="col-span-6 md:col-span-2"
                     >
                       <InputNumber min={1} className="w-full" />
                     </Form.Item>
@@ -258,7 +271,7 @@ export default function StockIn() {
                       </Button>
                     </div>
                     <div className="col-span-12 text-[11px] text-ink-3">
-                      Prices and GST are pulled from the selected product automatically.
+                      HSN, prices and GST are filled from the selected product; you can edit the HSN for this entry.
                     </div>
                   </div>
                 ))}

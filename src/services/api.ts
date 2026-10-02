@@ -118,6 +118,7 @@ export const categoryService = {
 export interface ApiProduct {
   id: string; name: string; categoryId: string | null; categoryName: string;
   brand: string; color: string; sku?: string; barcode?: string; description: string | null;
+  hsn: string;
   purchasePrice: number; sellingPrice: number; gstRate: number;
   stock: number; minStock: number; unit: string; image: string | null;
   business: string; status: string; createdAt: string; updatedAt: string;
@@ -341,7 +342,7 @@ export interface StockInPayload {
   purchaseDate: string;
   paymentMode: string;
   notes?: string;
-  items: Array<Pick<StockMovementItemInput, 'productId' | 'quantity' | 'purchasePrice' | 'gstRate'>>;
+  items: Array<Pick<StockMovementItemInput, 'productId' | 'quantity' | 'purchasePrice' | 'gstRate'> & { hsn?: string }>;
 }
 
 export interface StockOutPayload {
@@ -404,13 +405,14 @@ export const inventoryService = {
 export interface ApiPurchase {
   id: string; poNumber: string; supplierName: string; supplierId?: string | null;
   purchaseDate: string; paymentMode: string; status: string;
+  received: boolean;
   subtotal: number; gstAmount: number; totalAmount: number;
   notes?: string | null; business: string; createdAt: string;
   items?: ApiPurchaseItem[];
 }
 export interface ApiPurchaseItem {
-  id: string; productId: string; productName: string;
-  quantity: number; purchasePrice: number; gstRate: number; amount: number;
+  id: string; productId: string; productName: string; hsn: string;
+  quantity: number; purchasePrice: number; cashDiscountPercent: number; gstRate: number; amount: number;
 }
 export const purchaseService = {
   getAll: async (filters?: { business?: string; search?: string; status?: string }): Promise<ApiPurchase[]> => {
