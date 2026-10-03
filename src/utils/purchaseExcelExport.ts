@@ -122,7 +122,7 @@ function addPurchaseWorksheet(
 
   const supplier = suppliers.find((item) => item.id === purchase.supplierId);
   styleMergedRow(sheet, 13, 1, 5, `Supplier / Vendor: ${supplier?.name ?? purchase.supplierName}`, sectionFill, true);
-  styleMergedRow(sheet, 13, 6, 11, `PO Number: ${purchase.poNumber}`, sectionFill, true);
+  styleMergedRow(sheet, 13, 6, 11, `PO Number: ${purchase.poNumber}  |  HSN Code: ${purchase.hsn || '—'}`, sectionFill, true);
   styleMergedRow(sheet, 14, 1, 5, `Address: ${[supplier?.address, supplier?.city].filter(Boolean).join(', ') || '—'}`);
   styleMergedRow(sheet, 14, 6, 11, `Purchase Date: ${formatDate(purchase.purchaseDate)}`);
   styleMergedRow(sheet, 15, 1, 5, `Supplier GSTIN: ${supplier?.gstNumber ?? '—'}`);

@@ -21,6 +21,13 @@ const COLUMNS: TableColumn[] = [
   { key: "amount", label: "Amount", align: "num" },
 ];
 
+const OUT_OF_STOCK_COLUMNS: TableColumn[] = [
+  { key: "product", label: "Product" },
+  { key: "sku", label: "SKU" },
+  { key: "stock", label: "Available Stock", align: "num" },
+  { key: "status", label: "Status" },
+];
+
 type StockOutFormValues = {
   invoiceNo: string;
   customerName: string;
@@ -84,6 +91,21 @@ export default function StockOut() {
       source: <Badge tone="neutral">{r.source}</Badge>,
     }));
   }, [data, search, paymentFilter]);
+
+  const outOfStockRows = useMemo(() => products
+    .filter((product) => product.stock <= 0)
+    .filter((product) =>
+      !search ||
+      product.name.toLowerCase().includes(search.toLowerCase()) ||
+      (product.sku ?? '').toLowerCase().includes(search.toLowerCase())
+    )
+    .map((product) => ({
+      id: product.id,
+      product: product.name,
+      sku: product.sku || '—',
+      stock: String(product.stock),
+      status: <Badge tone="danger">Out of Stock</Badge>,
+    })), [products, search]);
 
   const sourceOptions = useMemo(() => {
     const sources = [...new Set((data?.rows ?? []).map((r) => r.source).filter(Boolean))];
@@ -164,6 +186,13 @@ export default function StockOut() {
         title="Stock Out History"
         subtitle={`${toggle === "paints" ? "Paints" : "Interiors"} business`}
         paginationText={data?.pagination ?? "Loading..."}
+      />
+      <DataTable
+        columns={OUT_OF_STOCK_COLUMNS}
+        rows={outOfStockRows}
+        title="Out of Stock Products"
+        subtitle="Products with zero available stock"
+        paginationText={`Showing ${outOfStockRows.length} product${outOfStockRows.length === 1 ? '' : 's'}`}
       />
 
       <AppModal

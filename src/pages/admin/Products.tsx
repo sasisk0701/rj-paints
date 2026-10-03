@@ -105,7 +105,7 @@ export default function Products() {
   const openAdd = () => {
     setEditing(null);
     form.resetFields();
-    form.setFieldsValue({ business: toggle.toUpperCase(), gstRate: 18, stock: 0, minStock: 5 });
+    form.setFieldsValue({ business: toggle.toUpperCase(), gstRate: 18, stock: 1, minStock: 0 });
     resetImageState();
     setModalOpen(true);
   };
@@ -372,11 +372,11 @@ export default function Products() {
             </Form.Item>
 
             <Form.Item name="stock" label="Opening Stock">
-              <InputNumber min={0} style={{ width: '100%' }} placeholder="0" />
+              <InputNumber min={0} style={{ width: '100%' }} placeholder="1" />
             </Form.Item>
 
             <Form.Item name="minStock" label="Min Stock Alert">
-              <InputNumber min={0} style={{ width: '100%' }} placeholder="5" />
+              <InputNumber min={0} style={{ width: '100%' }} placeholder="0" />
             </Form.Item>
 
             <Form.Item name="business" label="Business" rules={[{ required: true }]}>

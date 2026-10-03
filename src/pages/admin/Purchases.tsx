@@ -26,10 +26,10 @@ const COLUMNS: TableColumn[] = [
 const STATUS_OPTIONS = ['Pending', 'Paid', 'Partial', 'Overdue', 'Cancelled'];
 const PAYMENT_OPTIONS = ['Cash', 'UPI', 'Cheque', 'Bank Transfer', 'Credit'];
 const EXPORT_DATE_RANGES = [
-  { label: 'Last 15 days', value: '15-days' },
-  { label: 'Last 1 month', value: '1-month' },
-  { label: 'Last 3 months', value: '3-months' },
-  { label: 'Last 6 months', value: '6-months' },
+  { label: 'Last 10 days', value: 10 },
+  { label: 'Last 30 days', value: 30 },
+  { label: 'Last 60 days', value: 60 },
+  { label: 'Last 90 days', value: 90 },
 ] as const;
 
 const STATUS_TONE: Record<string, Tone> = {
@@ -44,7 +44,7 @@ export default function Purchases() {
   const [loading, setLoading]           = useState(true);
   const [search, setSearch]             = useState('');
   const [statusFilter, setStatusFilter] = useState('');
-  const [exportDateRange, setExportDateRange] = useState<(typeof EXPORT_DATE_RANGES)[number]['value']>('15-days');
+  const [exportDateRange, setExportDateRange] = useState<(typeof EXPORT_DATE_RANGES)[number]['value']>(10);
   const [modalOpen, setModalOpen]       = useState(false);
   const [viewOpen, setViewOpen]         = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<ApiPurchase | null>(null);
@@ -80,6 +80,7 @@ export default function Purchases() {
     form.resetFields();
     form.setFieldsValue({
       poNumber: `PO-${Date.now()}`,
+      hsn: '',
       purchaseDate: new Date().toISOString().split('T')[0],
       paymentMode: 'Bank Transfer',
       status: 'Pending',
@@ -94,6 +95,7 @@ export default function Purchases() {
     setEditing(p);
     form.setFieldsValue({
       poNumber: p.poNumber,
+      hsn: p.hsn ?? '',
       supplierId: p.supplierId ?? undefined,
       supplierName: p.supplierName,
       purchaseDate: p.purchaseDate,
@@ -170,16 +172,7 @@ export default function Purchases() {
   const handleExport = async () => {
     const cutoff = new Date();
     cutoff.setHours(0, 0, 0, 0);
-    if (exportDateRange === '15-days') {
-      cutoff.setDate(cutoff.getDate() - 14);
-    } else {
-      const months = exportDateRange === '1-month' ? 1 : exportDateRange === '3-months' ? 3 : 6;
-      const originalDay = cutoff.getDate();
-      cutoff.setDate(1);
-      cutoff.setMonth(cutoff.getMonth() - months);
-      const lastDay = new Date(cutoff.getFullYear(), cutoff.getMonth() + 1, 0).getDate();
-      cutoff.setDate(Math.min(originalDay, lastDay));
-    }
+    cutoff.setDate(cutoff.getDate() - (exportDateRange - 1));
     const exportPurchases = purchases
       .filter((purchase) => {
         const purchaseDate = new Date(purchase.purchaseDate);
@@ -297,6 +290,9 @@ export default function Purchases() {
             <Form.Item name="poNumber" label="PO Number" rules={[{ required: true, message: 'Required' }]}>
               <Input placeholder="PO-1001" />
             </Form.Item>
+            <Form.Item name="hsn" label="HSN Code">
+              <Input placeholder="Enter HSN code" />
+            </Form.Item>
             <Form.Item name="supplierId" label="Supplier">
               <Select
                 placeholder="Select supplier (optional)"
@@ -405,6 +401,7 @@ export default function Purchases() {
               <div><span className="text-ink-3 text-xs">Status</span><div><Badge tone={STATUS_TONE[viewing.status] ?? 'neutral'}>{viewing.status}</Badge></div></div>
               <div><span className="text-ink-3 text-xs">Stock Received</span><div className="font-medium">{viewing.received ? 'Yes' : 'No'}</div></div>
               <div><span className="text-ink-3 text-xs">Payment Mode</span><div className="font-medium">{viewing.paymentMode}</div></div>
+              <div><span className="text-ink-3 text-xs">HSN Code</span><div className="font-medium">{viewing.hsn || '—'}</div></div>
               <div><span className="text-ink-3 text-xs">Total Amount</span><div className="font-bold text-lg">₹{viewing.totalAmount.toLocaleString('en-IN')}</div></div>
               <div><span className="text-ink-3 text-xs">GST Amount</span><div className="font-medium">₹{viewing.gstAmount.toLocaleString('en-IN')}</div></div>
             </div>
