@@ -18,6 +18,7 @@ const COLUMNS: TableColumn[] = [
   { key: 'image',    label: 'Image' },
   { key: 'product',  label: 'Product' },
   { key: 'category', label: 'Category' },
+  { key: 'hsn',      label: 'HSN Code' },
   { key: 'color',    label: 'Color' },
   { key: 'brand',    label: 'Brand' },
   { key: 'unit',     label: 'Unit' },
@@ -104,7 +105,7 @@ export default function Products() {
   const openAdd = () => {
     setEditing(null);
     form.resetFields();
-    form.setFieldsValue({ business: toggle.toUpperCase(), gstRate: 18, stock: 0, minStock: 5 });
+    form.setFieldsValue({ business: toggle.toUpperCase(), gstRate: 18, stock: 1, minStock: 0 });
     resetImageState();
     setModalOpen(true);
   };
@@ -112,7 +113,7 @@ export default function Products() {
   const openEdit = (p: ApiProduct) => {
     setEditing(p);
     form.setFieldsValue({
-      name: p.name, categoryId: p.categoryId, brand: p.brand, color: p.color ?? '',
+      name: p.name, categoryId: p.categoryId, brand: p.brand, color: p.color ?? '', hsn: p.hsn ?? '',
       description: p.description ?? '',
       purchasePrice: p.purchasePrice, sellingPrice: p.sellingPrice,
       gstRate: p.gstRate, stock: p.stock, minStock: p.minStock,
@@ -201,9 +202,9 @@ export default function Products() {
 
   const handleExport = () => {
     if (!products.length) { message.warning('No products to export'); return; }
-    const header = 'Name,Category,Color,Brand,Unit,Purchase Price,Selling Price,GST%,Stock,Min Stock,Status\n';
+    const header = 'Name,Category,HSN Code,Color,Brand,Unit,Purchase Price,Selling Price,GST%,Stock,Min Stock,Status\n';
     const csv = products.map((p) =>
-      `"${p.name}","${p.categoryName}","${p.color ?? ''}","${p.brand}","${p.unit}",${p.purchasePrice},${p.sellingPrice},${p.gstRate},${p.stock},${p.minStock},"${p.status}"`
+      `"${p.name}","${p.categoryName}","${p.hsn ?? ''}","${p.color ?? ''}","${p.brand}","${p.unit}",${p.purchasePrice},${p.sellingPrice},${p.gstRate},${p.stock},${p.minStock},"${p.status}"`
     ).join('\n');
     const blob = new Blob([header + csv], { type: 'text/csv' });
     const url  = URL.createObjectURL(blob);
@@ -219,10 +220,8 @@ export default function Products() {
     const inStock  = products.filter((p) => p.status === 'In Stock').length;
     const lowStock = products.filter((p) => p.status === 'Low Stock').length;
     const outStock = products.filter((p) => p.status === 'Out of Stock').length;
-    const stockVal = products.reduce((s, p) => s + p.sellingPrice * p.stock, 0);
     return [
       { label: 'Total Products', value: String(products.length), deltaTone: 'neutral' as const },
-      { label: 'Stock Value',    value: `₹${(stockVal / 100000).toFixed(2)}L`, deltaTone: 'up'   as const },
       { label: 'In Stock',       value: String(inStock),  deltaTone: 'up'   as const },
       { label: 'Low Stock',      value: String(lowStock), deltaTone: 'down' as const },
       { label: 'Out of Stock',   value: String(outStock), deltaTone: 'down' as const },
@@ -253,6 +252,7 @@ export default function Products() {
         />
       ),
       category: p.categoryName,
+      hsn:      p.hsn ?? '',
       color:    p.color ?? '',
       brand:    p.brand,
       unit:     p.unit,
@@ -351,6 +351,10 @@ export default function Products() {
               <Input placeholder="e.g. White, Royal Blue" />
             </Form.Item>
 
+            <Form.Item name="hsn" label="HSN Code">
+              <Input placeholder="e.g. 3209" />
+            </Form.Item>
+
             <Form.Item name="purchasePrice" label="Purchase Price (₹)" rules={[{ required: true, message: 'Required' }]}>
               <InputNumber min={0} style={{ width: '100%' }} placeholder="0" />
             </Form.Item>
@@ -368,11 +372,11 @@ export default function Products() {
             </Form.Item>
 
             <Form.Item name="stock" label="Opening Stock">
-              <InputNumber min={0} style={{ width: '100%' }} placeholder="0" />
+              <InputNumber min={0} style={{ width: '100%' }} placeholder="1" />
             </Form.Item>
 
             <Form.Item name="minStock" label="Min Stock Alert">
-              <InputNumber min={0} style={{ width: '100%' }} placeholder="5" />
+              <InputNumber min={0} style={{ width: '100%' }} placeholder="0" />
             </Form.Item>
 
             <Form.Item name="business" label="Business" rules={[{ required: true }]}>

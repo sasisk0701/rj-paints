@@ -8,7 +8,7 @@ import jwt from 'jsonwebtoken';
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
-import { PrismaClient } from '@prisma/client';
+import { Prisma, PrismaClient } from '@prisma/client';
 import { authenticateJWT, AuthRequest } from './middleware/auth';
 
 dotenv.config();
@@ -688,19 +688,59 @@ app.get('/api/products/:id', authenticateJWT, async (req, res) => {
 
 app.post('/api/products', authenticateJWT, async (req: AuthRequest, res) => {
   const { name, categoryId, categoryName, brand, sku, barcode, description,
-          purchasePrice, sellingPrice, gstRate, stock, minStock, unit, business, image } = req.body;
+          hsn, purchasePrice, sellingPrice, gstRate, stock, minStock, unit, business, image } = req.body;
   if (!name || !business)
     return res.status(400).json({ error: 'name and business are required' });
-  const status = stock <= 0 ? 'Out of Stock' : stock <= minStock ? 'Low Stock' : 'In Stock';
-  const product = await prisma.product.create({
-    data: { name, categoryId, categoryName: categoryName || '', brand, sku, barcode,
-            description, purchasePrice: +purchasePrice, sellingPrice: +sellingPrice,
-            gstRate: +(gstRate || 18), stock: +(stock || 0), minStock: +(minStock || 5),
-            unit: unit || 'Piece', business: business.toUpperCase(), status, image },
+  const openingStock = Number(stock ?? 1);
+  const minimumStock = Number(minStock ?? 0);
+  const purchaseCost = Number(purchasePrice);
+  const productGstRate = Number(gstRate ?? 18);
+  const status = openingStock <= 0 ? 'Out of Stock' : openingStock <= minimumStock ? 'Low Stock' : 'In Stock';
+  const product = await prisma.$transaction(async (tx) => {
+    const created = await tx.product.create({
+      data: { name, categoryId, categoryName: categoryName || '', brand, sku, barcode, hsn: hsn || '',
+              description, purchasePrice: purchaseCost, sellingPrice: +sellingPrice,
+              gstRate: productGstRate, stock: openingStock, minStock: minimumStock,
+              unit: unit || 'Piece', business: business.toUpperCase(), status, image },
+    });
+
+    if (openingStock > 0) {
+      const subtotal = openingStock * purchaseCost;
+      const totalGst = subtotal * productGstRate / 100;
+      await tx.stockInRecord.create({
+        data: {
+          invoiceNo: `OPEN-${created.id}`,
+          supplierName: 'Opening Stock',
+          purchaseDate: new Date(),
+          subtotal,
+          totalGst,
+          grandTotal: subtotal + totalGst,
+          paymentMode: 'Opening Balance',
+          notes: 'Opening stock entry',
+          items: {
+            create: {
+              productId: created.id,
+              hsn: created.hsn,
+              quantity: openingStock,
+              purchasePrice: purchaseCost,
+              gstRate: productGstRate,
+              total: subtotal + totalGst,
+            },
+          },
+        },
+      });
+    }
+
+    return created;
   });
   await prisma.activityLog.create({
     data: { userId: req.user.id, userName: req.user.name, action: 'Product Created', module: 'Catalog', reference: name, business: business.toLowerCase() },
   });
+  if (openingStock > 0) {
+    await prisma.activityLog.create({
+      data: { userId: req.user.id, userName: req.user.name, action: 'Stock In Created', module: 'Inventory', reference: `OPEN-${product.id}`, business: business.toLowerCase() },
+    });
+  }
   res.status(201).json(product);
 });
 
@@ -711,13 +751,75 @@ app.put('/api/products/:id', authenticateJWT, async (req: AuthRequest, res) => {
   const { stock, minStock, ...rest } = req.body;
   const s = +(stock ?? existing.stock), m = +(minStock ?? existing.minStock);
   const status = s <= 0 ? 'Out of Stock' : s <= m ? 'Low Stock' : 'In Stock';
-  const product = await prisma.product.update({
-    where: { id: req.params.id },
-    data: { ...rest, stock: s, minStock: m, status,
-            purchasePrice: rest.purchasePrice !== undefined ? +rest.purchasePrice : undefined,
-            sellingPrice:  rest.sellingPrice  !== undefined ? +rest.sellingPrice  : undefined,
-            gstRate:       rest.gstRate       !== undefined ? +rest.gstRate       : undefined,
-            image:         Object.prototype.hasOwnProperty.call(rest, 'image') ? (rest.image || null) : undefined },
+  const product = await prisma.$transaction(async (tx) => {
+    const updated = await tx.product.update({
+      where: { id: req.params.id },
+      data: { ...rest, stock: s, minStock: m, status,
+              purchasePrice: rest.purchasePrice !== undefined ? +rest.purchasePrice : undefined,
+              sellingPrice:  rest.sellingPrice  !== undefined ? +rest.sellingPrice  : undefined,
+              gstRate:       rest.gstRate       !== undefined ? +rest.gstRate       : undefined,
+              image:         Object.prototype.hasOwnProperty.call(rest, 'image') ? (rest.image || null) : undefined },
+    });
+
+    const quantityOut = existing.stock - s;
+    const quantityIn = s - existing.stock;
+    if (quantityOut > 0 || quantityIn > 0) {
+      const quantity = Math.abs(s - existing.stock);
+      const purchasePrice = Number(rest.purchasePrice ?? existing.purchasePrice);
+      const gstRate = Number(rest.gstRate ?? existing.gstRate);
+      const subtotal = quantity * purchasePrice;
+      const totalGst = subtotal * gstRate / 100;
+      if (quantityIn > 0) {
+        await tx.stockInRecord.create({
+          data: {
+            invoiceNo: `ADJIN-${existing.id}-${Date.now()}`,
+            supplierName: 'Stock Adjustment',
+            purchaseDate: new Date(),
+            subtotal,
+            totalGst,
+            grandTotal: subtotal + totalGst,
+            paymentMode: 'Adjustment',
+            notes: 'Manual stock adjustment',
+            items: {
+              create: {
+                productId: existing.id,
+                hsn: updated.hsn,
+                quantity,
+                purchasePrice,
+                gstRate,
+                total: subtotal + totalGst,
+              },
+            },
+          },
+        });
+      } else {
+        await tx.stockOutRecord.create({
+          data: {
+            invoiceNo: `ADJOUT-${existing.id}-${Date.now()}`,
+            customerName: 'Stock Adjustment',
+            customerPhone: 'N/A',
+            saleDate: new Date(),
+            subtotal,
+            discountTotal: 0,
+            totalGst,
+            grandTotal: subtotal + totalGst,
+            paymentMode: 'Adjustment',
+            notes: 'Manual stock adjustment',
+            items: {
+              create: {
+                productId: existing.id,
+                quantity,
+                sellingPrice: purchasePrice,
+                discount: 0,
+                gstRate,
+                total: subtotal + totalGst,
+              },
+            },
+          },
+        });
+      }
+    }
+    return updated;
   });
 
   if (Object.prototype.hasOwnProperty.call(rest, 'image') && existing.image && existing.image !== product.image) {
@@ -727,6 +829,15 @@ app.put('/api/products/:id', authenticateJWT, async (req: AuthRequest, res) => {
   await prisma.activityLog.create({
     data: { userId: req.user.id, userName: req.user.name, action: 'Product Updated', module: 'Catalog', reference: product.sku },
   });
+  if (s > existing.stock) {
+    await prisma.activityLog.create({
+      data: { userId: req.user.id, userName: req.user.name, action: 'Stock In Created', module: 'Inventory', reference: `ADJIN-${existing.id}`, business: product.business.toLowerCase() },
+    });
+  } else if (s < existing.stock) {
+    await prisma.activityLog.create({
+      data: { userId: req.user.id, userName: req.user.name, action: 'Stock Out Created', module: 'Inventory', reference: `ADJOUT-${existing.id}`, business: product.business.toLowerCase() },
+    });
+  }
   res.json(product);
 });
 
@@ -1047,12 +1158,16 @@ app.get('/api/inventory/stock-in', authenticateJWT, async (req, res) => {
       : undefined,
     include: {
       supplier: true,
-      items: { include: { product: true } },
+      items: {
+        where: { product: { stock: { gt: 0 }, deletedAt: null } },
+        include: { product: true },
+      },
     },
     orderBy: { purchaseDate: 'desc' },
   });
+  const visibleRecords = records.filter((record) => record.items.length > 0);
 
-  const rows = records.map((record) => {
+  const rows = visibleRecords.map((record) => {
     const totalQty = record.items.reduce((sum, item) => sum + item.quantity, 0);
     const productSummary = record.items.length === 1
       ? record.items[0].product.name
@@ -1062,32 +1177,34 @@ app.get('/api/inventory/stock-in', authenticateJWT, async (req, res) => {
       id: record.id,
       ref: record.invoiceNo,
       date: formatShortDate(record.purchaseDate),
-      source: record.notes?.toLowerCase().includes('opening') ? 'Opening Stock'
+      source: record.notes?.toLowerCase().includes('adjustment') ? 'Stock Adjustment'
+        : record.notes?.toLowerCase().includes('opening') ? 'Opening Stock'
         : record.notes?.toLowerCase().includes('return') ? 'Supplier Return'
         : 'Purchase',
-      party: record.supplier?.name || '—',
+      party: record.supplier?.name || record.supplierName || '—',
       product: productSummary,
       qty: String(totalQty),
-      amount: formatCurrency(record.grandTotal),
+      amount: formatCurrency(record.items.reduce((sum, item) => sum + item.total, 0)),
       reference: record.invoiceNo,
     };
   });
 
   const monthStart = monthRange().start;
   const monthEnd = monthRange().end;
-  const monthRecords = records.filter((record) => record.purchaseDate >= monthStart && record.purchaseDate < monthEnd);
-  const monthGrandTotal = monthRecords.reduce((sum, record) => sum + record.grandTotal, 0);
+  const monthRecords = visibleRecords.filter((record) => record.purchaseDate >= monthStart && record.purchaseDate < monthEnd);
+  const monthGrandTotal = monthRecords.reduce((sum, record) =>
+    sum + record.items.reduce((itemsTotal, item) => itemsTotal + item.total, 0), 0);
   const monthQty = monthRecords.reduce((sum, record) => sum + record.items.reduce((q, item) => q + item.quantity, 0), 0);
-  const uniqueSuppliers = new Set(records.map((record) => record.supplierId));
+  const uniqueSuppliers = new Set(visibleRecords.map((record) => record.supplierId));
 
   res.json({
     kpis: [
       { label: 'Stock In (this month)', value: `${monthRecords.length} entries`, delta: formatCurrency(monthGrandTotal) + ' received', deltaTone: 'neutral' },
       { label: 'Items Received', value: String(monthQty), delta: `${uniqueSuppliers.size} suppliers`, deltaTone: 'neutral' },
       { label: 'Average Entry', value: formatCurrency(monthRecords.length ? monthGrandTotal / monthRecords.length : 0), delta: 'per stock in record', deltaTone: 'neutral' },
-      { label: 'Total Entries', value: String(records.length), delta: 'all time', deltaTone: 'neutral' },
+      { label: 'Total Entries', value: String(visibleRecords.length), delta: 'all time', deltaTone: 'neutral' },
     ],
-    pagination: `Showing 1–${rows.length} of ${records.length} entries`,
+    pagination: `Showing 1–${rows.length} of ${visibleRecords.length} entries`,
     rows,
   });
 });
@@ -1169,6 +1286,7 @@ app.post('/api/inventory/stock-in', authenticateJWT, async (req: AuthRequest, re
           data: {
             stockInId: record.id,
             productId: product.id,
+            hsn: item.hsn ?? product.hsn,
             quantity,
             purchasePrice,
             gstRate,
@@ -1222,15 +1340,26 @@ app.get('/api/inventory/stock-out', authenticateJWT, async (req, res) => {
   const { business } = req.query as Record<string, string>;
   const scope = resolveBusinessScope(business);
 
-  const records = await prisma.stockOutRecord.findMany({
+  const [records, sales] = await Promise.all([
+    prisma.stockOutRecord.findMany({
     where: scope
       ? { items: { some: { product: { business: { in: scope } } } } }
       : undefined,
     include: { items: { include: { product: true } } },
     orderBy: { saleDate: 'desc' },
-  });
+    }),
+    prisma.sale.findMany({
+      where: {
+        deletedAt: null,
+        status: { not: 'Cancelled' },
+        business: scope ? { in: scope } : undefined,
+      },
+      include: { items: true },
+      orderBy: { saleDate: 'desc' },
+    }),
+  ]);
 
-  const rows = records.map((record) => {
+  const stockOutRows = records.map((record) => {
     const totalQty = record.items.reduce((sum, item) => sum + item.quantity, 0);
     const productSummary = record.items.length === 1
       ? record.items[0].product.name
@@ -1240,7 +1369,8 @@ app.get('/api/inventory/stock-out', authenticateJWT, async (req, res) => {
       id: record.id,
       ref: record.invoiceNo,
       date: formatShortDate(record.saleDate),
-      source: record.notes?.toLowerCase().includes('damage') ? 'Damaged Stock'
+      source: record.notes?.toLowerCase().includes('adjustment') ? 'Stock Adjustment'
+        : record.notes?.toLowerCase().includes('damage') ? 'Damaged Stock'
         : record.notes?.toLowerCase().includes('issue') ? 'Material Issue'
         : 'Sales',
       party: record.customerName || '—',
@@ -1249,21 +1379,38 @@ app.get('/api/inventory/stock-out', authenticateJWT, async (req, res) => {
       amount: formatCurrency(record.grandTotal),
     };
   });
+  const saleRows = sales.map((sale) => ({
+    id: `sale-${sale.id}`,
+    ref: sale.invoiceNumber,
+    date: formatShortDate(sale.saleDate),
+    source: 'Sales',
+    party: sale.customerName || '—',
+    product: sale.items.length === 1
+      ? sale.items[0].productName
+      : `${sale.items[0].productName} +${sale.items.length - 1} more`,
+    qty: String(sale.items.reduce((sum, item) => sum + item.quantity, 0)),
+    amount: formatCurrency(sale.totalAmount),
+  }));
+  const rows = [...stockOutRows, ...saleRows];
 
   const monthStart = monthRange().start;
   const monthEnd = monthRange().end;
   const monthRecords = records.filter((record) => record.saleDate >= monthStart && record.saleDate < monthEnd);
-  const monthGrandTotal = monthRecords.reduce((sum, record) => sum + record.grandTotal, 0);
-  const monthQty = monthRecords.reduce((sum, record) => sum + record.items.reduce((q, item) => q + item.quantity, 0), 0);
+  const monthSales = sales.filter((sale) => sale.saleDate >= monthStart && sale.saleDate < monthEnd);
+  const monthEntryCount = monthRecords.length + monthSales.length;
+  const monthGrandTotal = monthRecords.reduce((sum, record) => sum + record.grandTotal, 0) +
+    monthSales.reduce((sum, sale) => sum + sale.totalAmount, 0);
+  const monthQty = monthRecords.reduce((sum, record) => sum + record.items.reduce((q, item) => q + item.quantity, 0), 0) +
+    monthSales.reduce((sum, sale) => sum + sale.items.reduce((q, item) => q + item.quantity, 0), 0);
 
   res.json({
     kpis: [
-      { label: 'Stock Out (this month)', value: `${monthRecords.length} entries`, delta: formatCurrency(monthGrandTotal) + ' dispatched', deltaTone: 'neutral' },
+      { label: 'Stock Out (this month)', value: `${monthEntryCount} entries`, delta: formatCurrency(monthGrandTotal) + ' dispatched', deltaTone: 'neutral' },
       { label: 'Items Dispatched', value: String(monthQty), delta: 'total quantity moved', deltaTone: 'neutral' },
-      { label: 'Average Entry', value: formatCurrency(monthRecords.length ? monthGrandTotal / monthRecords.length : 0), delta: 'per stock out record', deltaTone: 'neutral' },
-      { label: 'Total Entries', value: String(records.length), delta: 'all time', deltaTone: 'neutral' },
+      { label: 'Average Entry', value: formatCurrency(monthEntryCount ? monthGrandTotal / monthEntryCount : 0), delta: 'per stock out record', deltaTone: 'neutral' },
+      { label: 'Total Entries', value: String(rows.length), delta: 'all time', deltaTone: 'neutral' },
     ],
-    pagination: `Showing 1–${rows.length} of ${records.length} entries`,
+    pagination: `Showing 1–${rows.length} of ${rows.length} entries`,
     rows,
   });
 });
@@ -1538,6 +1685,50 @@ app.post('/api/inventory/maintenance', authenticateJWT, async (req: AuthRequest,
 });
 
 // ─── Purchases ──────────────────────────────────────────────────────────────
+async function adjustReceivedPurchaseStock(
+  tx: Prisma.TransactionClient,
+  quantitiesByProduct: Map<string, number>
+) {
+  for (const [productId, quantityDelta] of quantitiesByProduct) {
+    if (quantityDelta === 0) continue;
+    const product = await tx.product.findUnique({ where: { id: productId } });
+    if (!product) throw new Error(`Product not found: ${productId}`);
+
+    const nextStock = product.stock + quantityDelta;
+    if (nextStock < 0) {
+      throw new Error(`Cannot remove ${Math.abs(quantityDelta)} units from ${product.name}; only ${product.stock} are currently in stock`);
+    }
+
+    await tx.product.update({
+      where: { id: productId },
+      data: {
+        stock: nextStock,
+        status: nextStock <= 0 ? 'Out of Stock' : nextStock <= product.minStock ? 'Low Stock' : 'In Stock',
+      },
+    });
+  }
+}
+
+function getPurchaseStockChanges(
+  oldItems: Array<{ productId: string; quantity: number }>,
+  newItems: Array<{ productId: string; quantity: number }>,
+  oldReceived: boolean,
+  newReceived: boolean
+) {
+  const changes = new Map<string, number>();
+  if (oldReceived) {
+    oldItems.forEach(({ productId, quantity }) => {
+      changes.set(productId, (changes.get(productId) ?? 0) - quantity);
+    });
+  }
+  if (newReceived) {
+    newItems.forEach(({ productId, quantity }) => {
+      changes.set(productId, (changes.get(productId) ?? 0) + quantity);
+    });
+  }
+  return changes;
+}
+
 app.get('/api/purchases', authenticateJWT, async (req, res) => {
   const { business, search, status } = req.query as Record<string, string>;
   const where: any = { deletedAt: null };
@@ -1558,8 +1749,10 @@ app.get('/api/purchases', authenticateJWT, async (req, res) => {
       id: i.id,
       productId:     i.productId,
       productName:   i.productName,
+      hsn:           i.hsn,
       quantity:      i.quantity,
       purchasePrice: i.purchasePrice,
+      cashDiscountPercent: i.cashDiscountPercent,
       gstRate:       i.gstRate,
       amount:        i.amount,
     })),
@@ -1568,7 +1761,7 @@ app.get('/api/purchases', authenticateJWT, async (req, res) => {
 });
 
 app.post('/api/purchases', authenticateJWT, async (req: AuthRequest, res) => {
-  const { poNumber, supplierId, supplierName, purchaseDate, paymentMode, status, notes, business, items } = req.body;
+  const { poNumber, supplierId, supplierName, purchaseDate, paymentMode, hsn, status, received, notes, business, items } = req.body;
   if (!poNumber || !supplierName || !purchaseDate || !paymentMode || !Array.isArray(items) || !items.length)
     return res.status(400).json({ error: 'poNumber, supplierName, purchaseDate, paymentMode and items are required' });
   try {
@@ -1578,25 +1771,40 @@ app.post('/api/purchases', authenticateJWT, async (req: AuthRequest, res) => {
       const price = Number(item.purchasePrice);
       const gst   = Number(item.gstRate ?? 18);
       const lineSubtotal = qty * price;
-      const lineGst      = lineSubtotal * gst / 100;
-      subtotal    += lineSubtotal;
+      const cashDiscountPercent = Number(item.cashDiscountPercent ?? 0);
+      const taxableAmount = lineSubtotal * (1 - cashDiscountPercent / 100);
+      const lineGst      = taxableAmount * gst / 100;
+      subtotal    += taxableAmount;
       gstAmount   += lineGst;
-      totalAmount += lineSubtotal + lineGst;
-      return { productId: item.productId, productName: item.productName ?? '', quantity: qty, purchasePrice: price, gstRate: gst, amount: lineSubtotal + lineGst };
+      totalAmount += taxableAmount + lineGst;
+      return { productId: item.productId, productName: item.productName ?? '', hsn: item.hsn ?? '', quantity: qty, purchasePrice: price, cashDiscountPercent, gstRate: gst, amount: taxableAmount + lineGst };
     });
-    const purchase = await prisma.purchase.create({
-      data: {
-        poNumber, supplierName,
-        supplierId: supplierId || null,
-        purchaseDate: new Date(purchaseDate),
-        paymentMode,
-        status: status || 'Pending',
-        subtotal, gstAmount, totalAmount,
-        notes: notes || null,
-        business: (business || 'PAINTS').toUpperCase() as any,
-        items: { create: itemsData },
-      },
-      include: { items: true },
+    const isReceived = received === true;
+    const purchase = await prisma.$transaction(async (tx) => {
+      const created = await tx.purchase.create({
+        data: {
+          poNumber, supplierName,
+          supplierId: supplierId || null,
+          purchaseDate: new Date(purchaseDate),
+          paymentMode,
+          hsn: hsn || '',
+          status: status || 'Pending',
+          received: isReceived,
+          subtotal, gstAmount, totalAmount,
+          notes: notes || null,
+          business: (business || 'PAINTS').toUpperCase() as any,
+          items: { create: itemsData },
+        },
+        include: { items: true },
+      });
+      if (isReceived) {
+        const stockChanges = new Map<string, number>();
+        itemsData.forEach((item: { productId: string; quantity: number }) => {
+          stockChanges.set(item.productId, (stockChanges.get(item.productId) ?? 0) + item.quantity);
+        });
+        await adjustReceivedPurchaseStock(tx, stockChanges);
+      }
+      return created;
     });
     await prisma.activityLog.create({ data: { userId: req.user.id, userName: req.user.name, action: 'Purchase Created', module: 'Trade', reference: poNumber, business: (business || 'paints').toLowerCase() } });
     res.status(201).json(purchase);
@@ -1607,7 +1815,7 @@ app.post('/api/purchases', authenticateJWT, async (req: AuthRequest, res) => {
 });
 
 app.put('/api/purchases/:id', authenticateJWT, async (req: AuthRequest, res) => {
-  const { supplierId, supplierName, purchaseDate, paymentMode, status, notes, items } = req.body;
+  const { supplierId, supplierName, purchaseDate, paymentMode, hsn, status, received, notes, items } = req.body;
   try {
     let subtotal = 0, gstAmount = 0, totalAmount = 0;
     const itemsData = items?.map((item: any) => {
@@ -1615,22 +1823,43 @@ app.put('/api/purchases/:id', authenticateJWT, async (req: AuthRequest, res) => 
       const price = Number(item.purchasePrice);
       const gst   = Number(item.gstRate ?? 18);
       const lineSubtotal = qty * price;
-      const lineGst      = lineSubtotal * gst / 100;
-      subtotal    += lineSubtotal;
+      const cashDiscountPercent = Number(item.cashDiscountPercent ?? 0);
+      const taxableAmount = lineSubtotal * (1 - cashDiscountPercent / 100);
+      const lineGst      = taxableAmount * gst / 100;
+      subtotal    += taxableAmount;
       gstAmount   += lineGst;
-      totalAmount += lineSubtotal + lineGst;
-      return { productId: item.productId, productName: item.productName ?? '', quantity: qty, purchasePrice: price, gstRate: gst, amount: lineSubtotal + lineGst };
+      totalAmount += taxableAmount + lineGst;
+      return { productId: item.productId, productName: item.productName ?? '', hsn: item.hsn ?? '', quantity: qty, purchasePrice: price, cashDiscountPercent, gstRate: gst, amount: taxableAmount + lineGst };
     });
-    const purchase = await prisma.purchase.update({
-      where: { id: req.params.id },
-      data: {
-        supplierId: supplierId || null,
-        supplierName, paymentMode, status,
-        purchaseDate: purchaseDate ? new Date(purchaseDate) : undefined,
-        notes: notes || null,
-        ...(itemsData ? { subtotal, gstAmount, totalAmount, items: { deleteMany: {}, create: itemsData } } : {}),
-      },
-      include: { items: true },
+    const purchase = await prisma.$transaction(async (tx) => {
+      const existing = await tx.purchase.findUnique({
+        where: { id: req.params.id },
+        include: { items: true },
+      });
+      if (!existing || existing.deletedAt) throw new Error('Purchase not found');
+
+      const nextItems = itemsData ?? existing.items;
+      const nextReceived = received ?? existing.received;
+      await adjustReceivedPurchaseStock(tx, getPurchaseStockChanges(
+        existing.items,
+        nextItems,
+        existing.received,
+        nextReceived
+      ));
+
+      return tx.purchase.update({
+        where: { id: req.params.id },
+        data: {
+          supplierId: supplierId || null,
+          supplierName, paymentMode, status,
+          hsn: hsn ?? undefined,
+          received: received ?? undefined,
+          purchaseDate: purchaseDate ? new Date(purchaseDate) : undefined,
+          notes: notes || null,
+          ...(itemsData ? { subtotal, gstAmount, totalAmount, items: { deleteMany: {}, create: itemsData } } : {}),
+        },
+        include: { items: true },
+      });
     });
     await prisma.activityLog.create({ data: { userId: req.user.id, userName: req.user.name, action: 'Purchase Updated', module: 'Trade', reference: purchase.poNumber } });
     res.json(purchase);
@@ -1640,7 +1869,26 @@ app.put('/api/purchases/:id', authenticateJWT, async (req: AuthRequest, res) => 
 });
 
 app.delete('/api/purchases/:id', authenticateJWT, async (req: AuthRequest, res) => {
-  const purchase = await prisma.purchase.update({ where: { id: req.params.id }, data: { deletedAt: new Date() } });
+  let purchase;
+  try {
+    purchase = await prisma.$transaction(async (tx) => {
+      const existing = await tx.purchase.findUnique({
+        where: { id: req.params.id },
+        include: { items: true },
+      });
+      if (!existing || existing.deletedAt) throw new Error('Purchase not found');
+      if (existing.received) {
+        const stockChanges = new Map<string, number>();
+        existing.items.forEach((item) => {
+          stockChanges.set(item.productId, (stockChanges.get(item.productId) ?? 0) - item.quantity);
+        });
+        await adjustReceivedPurchaseStock(tx, stockChanges);
+      }
+      return tx.purchase.update({ where: { id: req.params.id }, data: { deletedAt: new Date() } });
+    });
+  } catch (err: any) {
+    return res.status(400).json({ error: err?.message || 'Failed to delete purchase' });
+  }
   await prisma.activityLog.create({ data: { userId: req.user.id, userName: req.user.name, action: 'Purchase Deleted', module: 'Trade', reference: purchase.poNumber } });
   res.json({ message: 'Purchase deleted' });
 });
@@ -1697,19 +1945,32 @@ app.post('/api/sales', authenticateJWT, async (req: AuthRequest, res) => {
       totalAmount    += lineTaxable + lineGst;
       return { productId: item.productId, productName: item.productName ?? '', quantity: qty, sellingPrice: price, discount: disc, gstRate: gst, amount: lineTaxable + lineGst };
     });
-    const sale = await prisma.sale.create({
-      data: {
-        invoiceNumber, customerName, customerPhone,
-        customerId: customerId || null,
-        saleDate: new Date(saleDate),
-        paymentMode,
-        status: status || 'Paid',
-        subtotal, discountAmount, gstAmount, totalAmount,
-        notes: notes || null,
-        business: (business || 'PAINTS').toUpperCase() as any,
-        items: { create: itemsData },
-      },
-      include: { items: true },
+    const saleStatus = status || 'Paid';
+    const inventoryManaged = true;
+    const sale = await prisma.$transaction(async (tx) => {
+      const created = await tx.sale.create({
+        data: {
+          invoiceNumber, customerName, customerPhone,
+          customerId: customerId || null,
+          saleDate: new Date(saleDate),
+          paymentMode,
+          status: saleStatus,
+          inventoryManaged,
+          subtotal, discountAmount, gstAmount, totalAmount,
+          notes: notes || null,
+          business: (business || 'PAINTS').toUpperCase() as any,
+          items: { create: itemsData },
+        },
+        include: { items: true },
+      });
+      if (saleStatus !== 'Cancelled') {
+        const stockChanges = new Map<string, number>();
+        itemsData.forEach((item: { productId: string; quantity: number }) => {
+          stockChanges.set(item.productId, (stockChanges.get(item.productId) ?? 0) - item.quantity);
+        });
+        await adjustReceivedPurchaseStock(tx, stockChanges);
+      }
+      return created;
     });
     await prisma.activityLog.create({ data: { userId: req.user.id, userName: req.user.name, action: 'Sale Created', module: 'Trade', reference: invoiceNumber, business: (business || 'paints').toLowerCase() } });
     res.status(201).json(sale);
@@ -1737,16 +1998,41 @@ app.put('/api/sales/:id', authenticateJWT, async (req: AuthRequest, res) => {
       totalAmount    += lineTaxable + lineGst;
       return { productId: item.productId, productName: item.productName ?? '', quantity: qty, sellingPrice: price, discount: disc, gstRate: gst, amount: lineTaxable + lineGst };
     });
-    const sale = await prisma.sale.update({
-      where: { id: req.params.id },
-      data: {
-        customerId: customerId || null,
-        customerName, customerPhone, paymentMode, status,
-        saleDate: saleDate ? new Date(saleDate) : undefined,
-        notes: notes || null,
-        ...(itemsData ? { subtotal, discountAmount, gstAmount, totalAmount, items: { deleteMany: {}, create: itemsData } } : {}),
-      },
-      include: { items: true },
+    const sale = await prisma.$transaction(async (tx) => {
+      const existing = await tx.sale.findUnique({
+        where: { id: req.params.id },
+        include: { items: true },
+      });
+      if (!existing || existing.deletedAt) throw new Error('Sale not found');
+
+      const nextItems = itemsData ?? existing.items;
+      const nextStatus = status ?? existing.status;
+      const shouldManageInventory = existing.inventoryManaged || Boolean(itemsData);
+      if (shouldManageInventory) {
+        const oldInventoryApplied = existing.inventoryManaged && existing.status !== 'Cancelled';
+        const nextInventoryApplied = nextStatus !== 'Cancelled';
+        await adjustReceivedPurchaseStock(tx, getPurchaseStockChanges(
+          existing.items,
+          nextItems,
+          oldInventoryApplied,
+          nextInventoryApplied
+        ));
+      }
+
+      return tx.sale.update({
+        where: { id: req.params.id },
+        data: {
+          customerId: customerId || null,
+          customerName, customerPhone, paymentMode, status,
+          inventoryManaged: shouldManageInventory
+            ? true
+            : undefined,
+          saleDate: saleDate ? new Date(saleDate) : undefined,
+          notes: notes || null,
+          ...(itemsData ? { subtotal, discountAmount, gstAmount, totalAmount, items: { deleteMany: {}, create: itemsData } } : {}),
+        },
+        include: { items: true },
+      });
     });
     await prisma.activityLog.create({ data: { userId: req.user.id, userName: req.user.name, action: 'Sale Updated', module: 'Trade', reference: sale.invoiceNumber } });
     res.json(sale);
@@ -1756,7 +2042,21 @@ app.put('/api/sales/:id', authenticateJWT, async (req: AuthRequest, res) => {
 });
 
 app.delete('/api/sales/:id', authenticateJWT, async (req: AuthRequest, res) => {
-  const sale = await prisma.sale.update({ where: { id: req.params.id }, data: { deletedAt: new Date() } });
+  const sale = await prisma.$transaction(async (tx) => {
+    const existing = await tx.sale.findUnique({
+      where: { id: req.params.id },
+      include: { items: true },
+    });
+    if (!existing || existing.deletedAt) throw new Error('Sale not found');
+    if (existing.inventoryManaged && existing.status !== 'Cancelled') {
+      const stockChanges = new Map<string, number>();
+      existing.items.forEach((item) => {
+        stockChanges.set(item.productId, (stockChanges.get(item.productId) ?? 0) + item.quantity);
+      });
+      await adjustReceivedPurchaseStock(tx, stockChanges);
+    }
+    return tx.sale.update({ where: { id: req.params.id }, data: { deletedAt: new Date() } });
+  });
   await prisma.activityLog.create({ data: { userId: req.user.id, userName: req.user.name, action: 'Sale Deleted', module: 'Trade', reference: sale.invoiceNumber } });
   res.json({ message: 'Sale deleted' });
 });

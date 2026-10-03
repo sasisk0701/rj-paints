@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Plus, Pencil, Trash2, Download, Eye } from 'lucide-react';
-import { Form, Input, InputNumber, Select, message } from 'antd';
+import { Form, Input, InputNumber, Select, Switch, message } from 'antd';
 import { useBusiness } from '@/hooks/useBusiness.ts';
 import { purchaseService, supplierService, apiProductService, type ApiPurchase, type ApiSupplier, type ApiProduct } from '@/services/api';
 import { Toolbar, SearchBox } from '@/components/common/Toolbar.tsx';
@@ -11,6 +11,7 @@ import { Badge } from '@/components/common/Badge';
 import { AppModal } from '@/components/common/AppModal';
 import { ConfirmDialog } from '@/components/common/ConfirmDialog';
 import type { KpiItem, TableColumn, Tone } from '@/types/types';
+import { exportPurchasesToExcel } from '@/utils/purchaseExcelExport';
 
 const COLUMNS: TableColumn[] = [
   { key: 'po',       label: 'PO #' },
@@ -24,6 +25,12 @@ const COLUMNS: TableColumn[] = [
 
 const STATUS_OPTIONS = ['Pending', 'Paid', 'Partial', 'Overdue', 'Cancelled'];
 const PAYMENT_OPTIONS = ['Cash', 'UPI', 'Cheque', 'Bank Transfer', 'Credit'];
+const EXPORT_DATE_RANGES = [
+  { label: 'Last 10 days', value: 10 },
+  { label: 'Last 30 days', value: 30 },
+  { label: 'Last 60 days', value: 60 },
+  { label: 'Last 90 days', value: 90 },
+] as const;
 
 const STATUS_TONE: Record<string, Tone> = {
   Paid: 'success', Pending: 'warn', Partial: 'neutral', Overdue: 'danger', Cancelled: 'danger',
@@ -37,12 +44,14 @@ export default function Purchases() {
   const [loading, setLoading]           = useState(true);
   const [search, setSearch]             = useState('');
   const [statusFilter, setStatusFilter] = useState('');
+  const [exportDateRange, setExportDateRange] = useState<(typeof EXPORT_DATE_RANGES)[number]['value']>(10);
   const [modalOpen, setModalOpen]       = useState(false);
   const [viewOpen, setViewOpen]         = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<ApiPurchase | null>(null);
   const [editing, setEditing]           = useState<ApiPurchase | null>(null);
   const [viewing, setViewing]           = useState<ApiPurchase | null>(null);
   const [saving, setSaving]             = useState(false);
+  const [exporting, setExporting]       = useState(false);
   const [deleting, setDeleting]         = useState(false);
   const [form] = Form.useForm();
 
@@ -71,11 +80,13 @@ export default function Purchases() {
     form.resetFields();
     form.setFieldsValue({
       poNumber: `PO-${Date.now()}`,
+      hsn: '',
       purchaseDate: new Date().toISOString().split('T')[0],
       paymentMode: 'Bank Transfer',
       status: 'Pending',
+      received: false,
       business: toggle.toUpperCase(),
-      items: [{ productId: '', quantity: 1, purchasePrice: 0, gstRate: 18 }],
+      items: [{ productId: '', quantity: 1, purchasePrice: 0, cashDiscountPercent: 0, gstRate: 18, hsn: '' }],
     });
     setModalOpen(true);
   };
@@ -84,19 +95,23 @@ export default function Purchases() {
     setEditing(p);
     form.setFieldsValue({
       poNumber: p.poNumber,
+      hsn: p.hsn ?? '',
       supplierId: p.supplierId ?? undefined,
       supplierName: p.supplierName,
       purchaseDate: p.purchaseDate,
       paymentMode: p.paymentMode,
       status: p.status,
+      received: p.received,
       notes: p.notes ?? '',
       business: p.business,
       items: p.items?.map((i) => ({
         productId: i.productId,
         quantity: i.quantity,
         purchasePrice: i.purchasePrice,
+        cashDiscountPercent: i.cashDiscountPercent ?? 0,
         gstRate: i.gstRate,
-      })) ?? [{ productId: '', quantity: 1, purchasePrice: 0, gstRate: 18 }],
+        hsn: i.hsn || products.find((product) => product.id === i.productId)?.hsn || '',
+      })) ?? [{ productId: '', quantity: 1, purchasePrice: 0, cashDiscountPercent: 0, gstRate: 18 }],
     });
     setModalOpen(true);
   };
@@ -114,8 +129,10 @@ export default function Purchases() {
             productName: prod?.name ?? '',
             quantity: Number(item.quantity),
             purchasePrice: Number(item.purchasePrice),
+            cashDiscountPercent: Number(item.cashDiscountPercent ?? 0),
             gstRate: Number(item.gstRate ?? 18),
-            amount: Number(item.quantity) * Number(item.purchasePrice),
+            hsn: item.hsn || prod?.hsn || '',
+            amount: Number(item.quantity) * Number(item.purchasePrice) * (1 - Number(item.cashDiscountPercent ?? 0) / 100),
           };
         }),
       };
@@ -152,20 +169,30 @@ export default function Purchases() {
     }
   };
 
-  const handleExport = () => {
-    if (!purchases.length) { message.warning('No purchases to export'); return; }
-    const header = 'PO #,Date,Supplier,Amount,Status,Payment Mode\n';
-    const csv = purchases.map((p) =>
-      `"${p.poNumber}","${p.purchaseDate}","${p.supplierName}",${p.totalAmount},"${p.status}","${p.paymentMode}"`
-    ).join('\n');
-    const blob = new Blob([header + csv], { type: 'text/csv' });
-    const url  = URL.createObjectURL(blob);
-    const a    = document.createElement('a');
-    a.href = url;
-    a.download = `purchases-${toggle}-${new Date().toISOString().split('T')[0]}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
-    message.success('Exported');
+  const handleExport = async () => {
+    const cutoff = new Date();
+    cutoff.setHours(0, 0, 0, 0);
+    cutoff.setDate(cutoff.getDate() - (exportDateRange - 1));
+    const exportPurchases = purchases
+      .filter((purchase) => {
+        const purchaseDate = new Date(purchase.purchaseDate);
+        return !Number.isNaN(purchaseDate.getTime()) && purchaseDate >= cutoff;
+      })
+      .sort((a, b) => new Date(b.purchaseDate).getTime() - new Date(a.purchaseDate).getTime());
+    if (!exportPurchases.length) {
+      message.warning('No purchases found in the selected date range');
+      return;
+    }
+    try {
+      setExporting(true);
+      await exportPurchasesToExcel(exportPurchases, suppliers, products, toggle);
+      message.success('Purchase workbook exported');
+    } catch (error) {
+      console.error('Failed to export purchases:', error);
+      message.error('Failed to export purchase workbook');
+    } finally {
+      setExporting(false);
+    }
   };
 
   const kpis = useMemo((): KpiItem[] => {
@@ -213,12 +240,22 @@ export default function Purchases() {
               onChange={(v) => setStatusFilter(v ?? '')}
               options={STATUS_OPTIONS.map((s) => ({ label: s, value: s }))}
             />
+            <Select
+              aria-label="Export date range"
+              size="small"
+              style={{ width: 150 }}
+              value={exportDateRange}
+              onChange={setExportDateRange}
+              options={EXPORT_DATE_RANGES.map((range) => ({ label: range.label, value: range.value }))}
+            />
             <SearchBox placeholder="Search PO, supplier…" value={search} onChange={(e) => setSearch(e.target.value)} />
           </>
         }
         right={
           <>
-            <Button variant="ghost" size="sm" icon={Download} onClick={handleExport}>Export</Button>
+            <Button variant="ghost" size="sm" icon={Download} onClick={handleExport} disabled={exporting}>
+              {exporting ? 'Exporting…' : 'Export'}
+            </Button>
             <Button variant="primary" size="sm" icon={Plus} onClick={openAdd}>New Purchase</Button>
           </>
         }
@@ -253,6 +290,9 @@ export default function Purchases() {
             <Form.Item name="poNumber" label="PO Number" rules={[{ required: true, message: 'Required' }]}>
               <Input placeholder="PO-1001" />
             </Form.Item>
+            <Form.Item name="hsn" label="HSN Code">
+              <Input placeholder="Enter HSN code" />
+            </Form.Item>
             <Form.Item name="supplierId" label="Supplier">
               <Select
                 placeholder="Select supplier (optional)"
@@ -278,6 +318,14 @@ export default function Purchases() {
             <Form.Item name="status" label="Status" rules={[{ required: true }]}>
               <Select options={STATUS_OPTIONS.map((v) => ({ label: v, value: v }))} />
             </Form.Item>
+            <Form.Item
+              name="received"
+              label="Stock Received"
+              valuePropName="checked"
+              extra="Received quantities will be added to product stock."
+            >
+              <Switch checkedChildren="Yes" unCheckedChildren="No" />
+            </Form.Item>
             <Form.Item name="notes" label="Notes" className="col-span-2">
               <Input placeholder="Optional remarks…" />
             </Form.Item>
@@ -289,13 +337,13 @@ export default function Purchases() {
               <div className="space-y-3 mt-2">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-bold uppercase tracking-widest text-ink-3">Items</span>
-                  <Button type="button" variant="ghost" size="sm" icon={Plus} onClick={() => add({ productId: '', quantity: 1, purchasePrice: 0, gstRate: 18 })}>
+                  <Button type="button" variant="ghost" size="sm" icon={Plus} onClick={() => add({ productId: '', quantity: 1, purchasePrice: 0, cashDiscountPercent: 0, gstRate: 18, hsn: '' })}>
                     Add Item
                   </Button>
                 </div>
                 {fields.map((field) => (
                   <div key={field.key} className="grid grid-cols-12 gap-3 items-end rounded-2xl border border-border bg-surface-2 p-4">
-                    <Form.Item name={[field.name, 'productId']} label="Product" rules={[{ required: true, message: 'Required' }]} className="col-span-12 md:col-span-5">
+                    <Form.Item name={[field.name, 'productId']} label="Product" rules={[{ required: true, message: 'Required' }]} className="col-span-12 md:col-span-3">
                       <Select
                         placeholder="Choose product" showSearch optionFilterProp="label"
                         options={products.map((p) => ({ label: `${p.name} (${p.sku})`, value: p.id }))}
@@ -305,16 +353,23 @@ export default function Purchases() {
                             const items = form.getFieldValue('items');
                             items[field.name].purchasePrice = prod.purchasePrice;
                             items[field.name].gstRate = prod.gstRate;
+                            items[field.name].hsn = prod.hsn ?? '';
                             form.setFieldValue('items', [...items]);
                           }
                         }}
                       />
                     </Form.Item>
+                    <Form.Item name={[field.name, 'hsn']} label="HSN Code" className="col-span-6 md:col-span-2">
+                      <Input placeholder="HSN code" />
+                    </Form.Item>
                     <Form.Item name={[field.name, 'quantity']} label="Qty" rules={[{ required: true }]} className="col-span-3 md:col-span-2">
                       <InputNumber min={1} className="w-full" />
                     </Form.Item>
-                    <Form.Item name={[field.name, 'purchasePrice']} label="Price (₹)" rules={[{ required: true }]} className="col-span-4 md:col-span-3">
+                    <Form.Item name={[field.name, 'purchasePrice']} label="Price (₹)" rules={[{ required: true }]} className="col-span-4 md:col-span-2">
                       <InputNumber min={0} className="w-full" />
+                    </Form.Item>
+                    <Form.Item name={[field.name, 'cashDiscountPercent']} label="Cash Disc %" className="col-span-3 md:col-span-2">
+                      <InputNumber min={0} max={100} className="w-full" />
                     </Form.Item>
                     <Form.Item name={[field.name, 'gstRate']} label="GST %" className="col-span-3 md:col-span-1">
                       <InputNumber min={0} max={28} className="w-full" />
@@ -344,7 +399,9 @@ export default function Purchases() {
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-3 text-sm">
               <div><span className="text-ink-3 text-xs">Status</span><div><Badge tone={STATUS_TONE[viewing.status] ?? 'neutral'}>{viewing.status}</Badge></div></div>
+              <div><span className="text-ink-3 text-xs">Stock Received</span><div className="font-medium">{viewing.received ? 'Yes' : 'No'}</div></div>
               <div><span className="text-ink-3 text-xs">Payment Mode</span><div className="font-medium">{viewing.paymentMode}</div></div>
+              <div><span className="text-ink-3 text-xs">HSN Code</span><div className="font-medium">{viewing.hsn || '—'}</div></div>
               <div><span className="text-ink-3 text-xs">Total Amount</span><div className="font-bold text-lg">₹{viewing.totalAmount.toLocaleString('en-IN')}</div></div>
               <div><span className="text-ink-3 text-xs">GST Amount</span><div className="font-medium">₹{viewing.gstAmount.toLocaleString('en-IN')}</div></div>
             </div>
@@ -352,7 +409,7 @@ export default function Purchases() {
               <table className="w-full text-sm border-collapse">
                 <thead>
                   <tr className="bg-surface-2">
-                    {['Product', 'Qty', 'Price', 'GST%', 'Amount'].map((h) => (
+                    {['Product', 'HSN Code', 'Qty', 'Price', 'Cash Disc %', 'GST%', 'Amount'].map((h) => (
                       <th key={h} className="text-left text-xs font-bold text-ink-3 px-3 py-2 border-b border-border">{h}</th>
                     ))}
                   </tr>
@@ -361,8 +418,10 @@ export default function Purchases() {
                   {viewing.items.map((item) => (
                     <tr key={item.id} className="border-b border-border">
                       <td className="px-3 py-2">{item.productName}</td>
+                      <td className="px-3 py-2">{item.hsn || '—'}</td>
                       <td className="px-3 py-2">{item.quantity}</td>
                       <td className="px-3 py-2">₹{item.purchasePrice.toLocaleString('en-IN')}</td>
+                      <td className="px-3 py-2">{item.cashDiscountPercent ?? 0}%</td>
                       <td className="px-3 py-2">{item.gstRate}%</td>
                       <td className="px-3 py-2 font-semibold">₹{item.amount.toLocaleString('en-IN')}</td>
                     </tr>

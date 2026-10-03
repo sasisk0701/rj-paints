@@ -54,7 +54,7 @@ Enterprise-grade, dual-business web platform for **RJ Paints & Hardwares** (Asia
 ## 🛠️ Tech Stack
 
 - **Frontend**: React 18, TypeScript, Vite, Ant Design (v5), Framer Motion, Lucide Icons, Recharts, React Hook Form, Zod, React Router DOM v6.
-- **Backend**: Node.js, Express.js, TypeScript, Prisma ORM, PostgreSQL, JWT, bcrypt, Helmet.
+- **Backend**: Node.js, Express.js, TypeScript, Prisma ORM, MySQL, JWT, bcrypt, Helmet.
 - **Deployment**: Vercel SPA configuration (`vercel.json`), Dockerfile, Docker Compose, Nginx.
 
 ---
@@ -65,11 +65,23 @@ Enterprise-grade, dual-business web platform for **RJ Paints & Hardwares** (Asia
 # 1. Install dependencies
 npm install
 
-# 2. Run local development server
+# 2. Start the local MySQL database
+docker compose -f docker/docker-compose.yml up -d mysql
+
+# 3. Configure and start the backend
+cp -n server/.env.example server/.env
+cd server
+npm install
+npx prisma generate
+npx prisma db push
 npm run dev
 ```
 
-Visit `http://localhost:3000` in your browser.
+If `server/.env` already exists, update only its `DATABASE_URL` to
+`mysql://rj_admin:rj_paints_dev_password@localhost:3306/rj_paints_db` for the local
+Docker database. These credentials are for local development; use your own secure
+credentials outside development.
+Visit `http://localhost:3000` for the frontend and `http://localhost:5000` for the API.
 
 ---
 
@@ -93,7 +105,6 @@ Visit `http://localhost:3000` in your browser.
 ## 🐳 Containerized Deployment via Docker
 
 ```bash
-# Start full stack (PostgreSQL + Express API + Nginx Frontend)
-cd docker
-docker-compose up -d --build
+# Start full stack (MySQL + Express API + Nginx Frontend)
+docker compose -f docker/docker-compose.yml up -d --build
 ```

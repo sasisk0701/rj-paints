@@ -11,6 +11,7 @@ import { Badge } from '@/components/common/Badge';
 import { AppModal } from '@/components/common/AppModal';
 import { ConfirmDialog } from '@/components/common/ConfirmDialog';
 import type { KpiItem, TableColumn, Tone } from '@/types/types';
+import { exportSalesToExcel } from '@/utils/salesExcelExport';
 
 const COLUMNS: TableColumn[] = [
   { key: 'invoice',  label: 'Invoice #' },
@@ -44,6 +45,7 @@ export default function Sales() {
   const [viewing, setViewing]           = useState<ApiSale | null>(null);
   const [saving, setSaving]             = useState(false);
   const [deleting, setDeleting]         = useState(false);
+  const [exporting, setExporting]       = useState(false);
   const [form] = Form.useForm();
 
   const fetchAll = useCallback(async () => {
@@ -158,20 +160,18 @@ export default function Sales() {
     }
   };
 
-  const handleExport = () => {
+  const handleExport = async () => {
     if (!sales.length) { message.warning('No sales to export'); return; }
-    const header = 'Invoice #,Date,Customer,Phone,Amount,Status,Payment Mode\n';
-    const csv = sales.map((s) =>
-      `"${s.invoiceNumber}","${s.saleDate}","${s.customerName}","${s.customerPhone}",${s.totalAmount},"${s.status}","${s.paymentMode}"`
-    ).join('\n');
-    const blob = new Blob([header + csv], { type: 'text/csv' });
-    const url  = URL.createObjectURL(blob);
-    const a    = document.createElement('a');
-    a.href = url;
-    a.download = `sales-${toggle}-${new Date().toISOString().split('T')[0]}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
-    message.success('Exported');
+    try {
+      setExporting(true);
+      await exportSalesToExcel(sales, products, toggle);
+      message.success('Sales invoices exported to Excel');
+    } catch (error) {
+      console.error('Failed to export sales:', error);
+      message.error('Failed to export sales workbook');
+    } finally {
+      setExporting(false);
+    }
   };
 
   const handlePrint = (s: ApiSale) => {
@@ -230,7 +230,9 @@ export default function Sales() {
         }
         right={
           <>
-            <Button variant="ghost" size="sm" icon={Download} onClick={handleExport}>Export</Button>
+            <Button variant="ghost" size="sm" icon={Download} onClick={handleExport} disabled={exporting}>
+              {exporting ? 'Exporting…' : 'Export'}
+            </Button>
             <Button variant="primary" size="sm" icon={Plus} onClick={openAdd}>New Sale</Button>
           </>
         }
