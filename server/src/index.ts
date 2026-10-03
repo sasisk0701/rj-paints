@@ -671,10 +671,32 @@ app.get('/api/products', authenticateJWT, async (req, res) => {
   ];
   const products = await prisma.product.findMany({
     where,
-    include: { category: { select: { id: true, name: true } } },
+    include: {
+      category: { select: { id: true, name: true } },
+      purchaseItems: {
+        select: {
+          amount: true,
+          quantity: true,
+          purchase: { select: { poNumber: true, supplierName: true, createdAt: true, deletedAt: true } },
+        },
+      },
+    },
     orderBy: { createdAt: 'desc' },
   });
-  res.json(products);
+  res.json(products.map(({ purchaseItems, ...product }) => {
+    const latestPurchase = purchaseItems
+      .filter((item) => !item.purchase.deletedAt)
+      .sort((a, b) => b.purchase.createdAt.getTime() - a.purchase.createdAt.getTime())[0];
+    return {
+      ...product,
+      latestPurchase: latestPurchase ? {
+        poNumber: latestPurchase.purchase.poNumber,
+        supplierName: latestPurchase.purchase.supplierName,
+        quantity: latestPurchase.quantity,
+        amount: latestPurchase.amount,
+      } : null,
+    };
+  }));
 });
 
 app.get('/api/products/:id', authenticateJWT, async (req, res) => {
@@ -1765,22 +1787,71 @@ app.post('/api/purchases', authenticateJWT, async (req: AuthRequest, res) => {
   if (!poNumber || !supplierName || !purchaseDate || !paymentMode || !Array.isArray(items) || !items.length)
     return res.status(400).json({ error: 'poNumber, supplierName, purchaseDate, paymentMode and items are required' });
   try {
-    let subtotal = 0, gstAmount = 0, totalAmount = 0;
-    const itemsData = items.map((item: any) => {
-      const qty   = Number(item.quantity);
-      const price = Number(item.purchasePrice);
-      const gst   = Number(item.gstRate ?? 18);
-      const lineSubtotal = qty * price;
-      const cashDiscountPercent = Number(item.cashDiscountPercent ?? 0);
-      const taxableAmount = lineSubtotal * (1 - cashDiscountPercent / 100);
-      const lineGst      = taxableAmount * gst / 100;
-      subtotal    += taxableAmount;
-      gstAmount   += lineGst;
-      totalAmount += taxableAmount + lineGst;
-      return { productId: item.productId, productName: item.productName ?? '', hsn: item.hsn ?? '', quantity: qty, purchasePrice: price, cashDiscountPercent, gstRate: gst, amount: taxableAmount + lineGst };
-    });
     const isReceived = received === true;
+    const purchaseBusiness = (business || 'PAINTS').toUpperCase() as any;
     const purchase = await prisma.$transaction(async (tx) => {
+      let subtotal = 0, gstAmount = 0, totalAmount = 0;
+      const itemsData = [];
+      for (const item of items) {
+        const qty = Number(item.quantity);
+        const price = Number(item.purchasePrice);
+        const gst = Number(item.gstRate ?? 18);
+        const cashDiscountPercent = Number(item.cashDiscountPercent ?? 0);
+        let productId = item.productId;
+        let productName = item.productName ?? '';
+
+        if (item.newProduct) {
+          const details = item.newProduct;
+          if (!details.name?.trim() || !details.brand?.trim()
+            || details.sellingPrice == null || !Number.isFinite(Number(details.sellingPrice))
+            || !details.unit?.trim()) {
+            throw new Error('New products require a name, brand, selling price and unit');
+          }
+          const product = await tx.product.create({
+            data: {
+              name: details.name,
+              categoryId: details.categoryId || null,
+              categoryName: details.categoryName || '',
+              brand: details.brand,
+              color: details.color || '',
+              sku: details.sku || null,
+              barcode: details.barcode || null,
+              description: details.description || null,
+              hsn: details.hsn || item.hsn || '',
+              purchasePrice: price,
+              sellingPrice: Number(details.sellingPrice),
+              gstRate: gst,
+              stock: 0,
+              minStock: Number(details.minStock ?? 0),
+              unit: details.unit,
+              image: details.image || null,
+              business: purchaseBusiness,
+              status: 'Out of Stock',
+            },
+          });
+          productId = product.id;
+          productName = product.name;
+        }
+        if (!productId) throw new Error('Select an existing product or enter new product details');
+
+        const lineSubtotal = qty * price;
+        const taxableAmount = lineSubtotal * (1 - cashDiscountPercent / 100);
+        const lineGst = taxableAmount * gst / 100;
+        subtotal += taxableAmount;
+        gstAmount += lineGst;
+        totalAmount += taxableAmount + lineGst;
+        itemsData.push({
+          productId,
+          productName,
+          hsn: item.hsn ?? '',
+          quantity: qty,
+          purchasePrice: price,
+          cashDiscountPercent,
+          gstRate: gst,
+          amount: taxableAmount + lineGst,
+        });
+      }
+
       const created = await tx.purchase.create({
         data: {
           poNumber, supplierName,
@@ -1792,7 +1863,7 @@ app.post('/api/purchases', authenticateJWT, async (req: AuthRequest, res) => {
           received: isReceived,
           subtotal, gstAmount, totalAmount,
           notes: notes || null,
-          business: (business || 'PAINTS').toUpperCase() as any,
+          business: purchaseBusiness,
           items: { create: itemsData },
         },
         include: { items: true },
@@ -1806,7 +1877,7 @@ app.post('/api/purchases', authenticateJWT, async (req: AuthRequest, res) => {
       }
       return created;
     });
-    await prisma.activityLog.create({ data: { userId: req.user.id, userName: req.user.name, action: 'Purchase Created', module: 'Trade', reference: poNumber, business: (business || 'paints').toLowerCase() } });
+    await prisma.activityLog.create({ data: { userId: req.user.id, userName: req.user.name, action: 'Purchase Created', module: 'Trade', reference: poNumber, business: purchaseBusiness.toLowerCase() } });
     res.status(201).json(purchase);
   } catch (err: any) {
     if (err?.code === 'P2002') return res.status(409).json({ error: 'PO number already exists' });
