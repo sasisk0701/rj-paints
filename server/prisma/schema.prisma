@@ -43,8 +43,8 @@ model Product {
   purchasePrice Float
   sellingPrice  Float
   gstRate       Float        @default(18.0)
-  stock         Int          @default(0)
-  minStock      Int          @default(5)
+  stock         Int          @default(1)
+  minStock      Int          @default(0)
   unit          String       @default("Liter")
   image         String?
   business      BusinessType @default(PAINTS)
@@ -186,6 +186,7 @@ model Purchase {
   supplierName String
   purchaseDate DateTime
   paymentMode  String
+  hsn          String        @default("")
   status       String        @default("Pending")
   received     Boolean       @default(false)
   subtotal     Float         @default(0)
@@ -218,6 +219,7 @@ model PurchaseItem {
 model Sale {
   id             String       @id @default(uuid())
   invoiceNumber  String       @unique
+  inventoryManaged Boolean    @default(false)
   customerId     String?
   customer       Customer?    @relation(fields: [customerId], references: [id])
   customerName   String
