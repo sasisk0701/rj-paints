@@ -1751,6 +1751,67 @@ function getPurchaseStockChanges(
   return changes;
 }
 
+type PurchaseItemAmounts = {
+  quantity: number;
+  packs: number;
+  volume: string;
+  purchasePrice: number;
+  gstRate: number;
+  inBillDiscountPercent: number;
+  inBillDiscountAmount: number;
+  inBillDiscount2Percent: number;
+  inBillDiscount2Amount: number;
+  cashDiscountPercent: number;
+  value: number;
+  inBillDiscount: number;
+  inBillDiscount2: number;
+  cashDiscount: number;
+  taxableAmount: number;
+  taxAmount: number;
+  totalAmount: number;
+};
+
+function calculatePurchaseItemAmounts(item: Record<string, unknown>): PurchaseItemAmounts {
+  const quantity = Number(item.quantity);
+  const packs = Number(item.packs ?? 0);
+  const volume = String(item.volume ?? '');
+  const purchasePrice = Number(item.purchasePrice);
+  const gstRate = Number(item.gstRate ?? 18);
+  const inBillDiscountPercent = Number(item.inBillDiscountPercent ?? 0);
+  const inBillDiscountAmount = Number(item.inBillDiscountAmount ?? 0);
+  const inBillDiscount2Percent = Number(item.inBillDiscount2Percent ?? 0);
+  const inBillDiscount2Amount = Number(item.inBillDiscount2Amount ?? 0);
+  const cashDiscountPercent = Number(item.cashDiscountPercent ?? 0);
+  const inputs = [
+    quantity, packs, purchasePrice, gstRate, inBillDiscountPercent, inBillDiscountAmount,
+    inBillDiscount2Percent, inBillDiscount2Amount, cashDiscountPercent,
+  ];
+  if (!inputs.every(Number.isFinite)
+    || !Number.isInteger(quantity) || !Number.isInteger(packs)
+    || quantity < 1 || packs < 0 || purchasePrice < 0 || gstRate < 0
+    || [inBillDiscountPercent, inBillDiscount2Percent, cashDiscountPercent].some((value) => value < 0 || value > 100)
+    || [inBillDiscountAmount, inBillDiscount2Amount].some((value) => value < 0)) {
+    throw new Error('Purchase quantities, prices, tax and discounts must be valid non-negative values; discount rates cannot exceed 100%');
+  }
+
+  const value = quantity * purchasePrice;
+  const inBillDiscount = value * inBillDiscountPercent / 100 + inBillDiscountAmount;
+  const afterFirstDiscount = value - inBillDiscount;
+  const inBillDiscount2 = afterFirstDiscount * inBillDiscount2Percent / 100 + inBillDiscount2Amount;
+  const afterSecondDiscount = afterFirstDiscount - inBillDiscount2;
+  const cashDiscount = afterSecondDiscount * cashDiscountPercent / 100;
+  const taxableAmount = afterSecondDiscount - cashDiscount;
+  if (taxableAmount < 0) throw new Error('Total discounts cannot exceed the purchase value');
+
+  const taxAmount = taxableAmount * gstRate / 100;
+  return {
+    quantity, packs, volume, purchasePrice, gstRate, inBillDiscountPercent, inBillDiscountAmount,
+    inBillDiscount2Percent, inBillDiscount2Amount, cashDiscountPercent, value,
+    inBillDiscount, inBillDiscount2, cashDiscount, taxableAmount, taxAmount,
+    totalAmount: taxableAmount + taxAmount,
+  };
+}
+
 app.get('/api/purchases', authenticateJWT, async (req, res) => {
   const { business, search, status } = req.query as Record<string, string>;
   const where: any = { deletedAt: null };
@@ -1773,7 +1834,13 @@ app.get('/api/purchases', authenticateJWT, async (req, res) => {
       productName:   i.productName,
       hsn:           i.hsn,
       quantity:      i.quantity,
+      packs:         i.packs,
+      volume:        i.volume,
       purchasePrice: i.purchasePrice,
+      inBillDiscountPercent:  i.inBillDiscountPercent,
+      inBillDiscountAmount:   i.inBillDiscountAmount,
+      inBillDiscount2Percent: i.inBillDiscount2Percent,
+      inBillDiscount2Amount:  i.inBillDiscount2Amount,
       cashDiscountPercent: i.cashDiscountPercent,
       gstRate:       i.gstRate,
       amount:        i.amount,
@@ -1793,10 +1860,7 @@ app.post('/api/purchases', authenticateJWT, async (req: AuthRequest, res) => {
       let subtotal = 0, gstAmount = 0, totalAmount = 0;
       const itemsData = [];
       for (const item of items) {
-        const qty = Number(item.quantity);
-        const price = Number(item.purchasePrice);
-        const gst = Number(item.gstRate ?? 18);
-        const cashDiscountPercent = Number(item.cashDiscountPercent ?? 0);
+        const amounts = calculatePurchaseItemAmounts(item);
         let productId = item.productId;
         let productName = item.productName ?? '';
 
@@ -1818,9 +1882,9 @@ app.post('/api/purchases', authenticateJWT, async (req: AuthRequest, res) => {
               barcode: details.barcode || null,
               description: details.description || null,
               hsn: details.hsn || item.hsn || '',
-              purchasePrice: price,
+              purchasePrice: amounts.purchasePrice,
               sellingPrice: Number(details.sellingPrice),
-              gstRate: gst,
+              gstRate: amounts.gstRate,
               stock: 0,
               minStock: Number(details.minStock ?? 0),
               unit: details.unit,
@@ -1834,21 +1898,24 @@ app.post('/api/purchases', authenticateJWT, async (req: AuthRequest, res) => {
         }
         if (!productId) throw new Error('Select an existing product or enter new product details');
 
-        const lineSubtotal = qty * price;
-        const taxableAmount = lineSubtotal * (1 - cashDiscountPercent / 100);
-        const lineGst = taxableAmount * gst / 100;
-        subtotal += taxableAmount;
-        gstAmount += lineGst;
-        totalAmount += taxableAmount + lineGst;
+        subtotal += amounts.taxableAmount;
+        gstAmount += amounts.taxAmount;
+        totalAmount += amounts.totalAmount;
         itemsData.push({
           productId,
           productName,
           hsn: item.hsn ?? '',
-          quantity: qty,
-          purchasePrice: price,
-          cashDiscountPercent,
-          gstRate: gst,
-          amount: taxableAmount + lineGst,
+          quantity: amounts.quantity,
+          packs: Math.trunc(amounts.packs),
+          volume: amounts.volume,
+          purchasePrice: amounts.purchasePrice,
+          inBillDiscountPercent: amounts.inBillDiscountPercent,
+          inBillDiscountAmount: amounts.inBillDiscountAmount,
+          inBillDiscount2Percent: amounts.inBillDiscount2Percent,
+          inBillDiscount2Amount: amounts.inBillDiscount2Amount,
+          cashDiscountPercent: amounts.cashDiscountPercent,
+          gstRate: amounts.gstRate,
+          amount: amounts.totalAmount,
         });
       }
 
@@ -1890,17 +1957,26 @@ app.put('/api/purchases/:id', authenticateJWT, async (req: AuthRequest, res) => 
   try {
     let subtotal = 0, gstAmount = 0, totalAmount = 0;
     const itemsData = items?.map((item: any) => {
-      const qty   = Number(item.quantity);
-      const price = Number(item.purchasePrice);
-      const gst   = Number(item.gstRate ?? 18);
-      const lineSubtotal = qty * price;
-      const cashDiscountPercent = Number(item.cashDiscountPercent ?? 0);
-      const taxableAmount = lineSubtotal * (1 - cashDiscountPercent / 100);
-      const lineGst      = taxableAmount * gst / 100;
-      subtotal    += taxableAmount;
-      gstAmount   += lineGst;
-      totalAmount += taxableAmount + lineGst;
-      return { productId: item.productId, productName: item.productName ?? '', hsn: item.hsn ?? '', quantity: qty, purchasePrice: price, cashDiscountPercent, gstRate: gst, amount: taxableAmount + lineGst };
+      const amounts = calculatePurchaseItemAmounts(item);
+      subtotal += amounts.taxableAmount;
+      gstAmount += amounts.taxAmount;
+      totalAmount += amounts.totalAmount;
+      return {
+        productId: item.productId,
+        productName: item.productName ?? '',
+        hsn: item.hsn ?? '',
+        quantity: amounts.quantity,
+        packs: Math.trunc(amounts.packs),
+        volume: amounts.volume,
+        purchasePrice: amounts.purchasePrice,
+        inBillDiscountPercent: amounts.inBillDiscountPercent,
+        inBillDiscountAmount: amounts.inBillDiscountAmount,
+        inBillDiscount2Percent: amounts.inBillDiscount2Percent,
+        inBillDiscount2Amount: amounts.inBillDiscount2Amount,
+        cashDiscountPercent: amounts.cashDiscountPercent,
+        gstRate: amounts.gstRate,
+        amount: amounts.totalAmount,
+      };
     });
     const purchase = await prisma.$transaction(async (tx) => {
       const existing = await tx.purchase.findUnique({

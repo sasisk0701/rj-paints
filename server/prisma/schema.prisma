@@ -210,7 +210,13 @@ model PurchaseItem {
   productName   String
   hsn           String   @default("")
   quantity      Int
+  packs         Int      @default(0)
+  volume        String   @default("")
   purchasePrice Float
+  inBillDiscountPercent  Float @default(0)
+  inBillDiscountAmount   Float @default(0)
+  inBillDiscount2Percent Float @default(0)
+  inBillDiscount2Amount  Float @default(0)
   cashDiscountPercent Float @default(0)
   gstRate       Float    @default(18)
   amount        Float
