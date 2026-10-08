@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Plus, Pencil, Trash2, Download, Eye } from 'lucide-react';
 import { Form, Input, InputNumber, Select, Switch, message } from 'antd';
 import { useBusiness } from '@/hooks/useBusiness.ts';
-import { purchaseService, supplierService, apiProductService, type ApiPurchase, type ApiSupplier, type ApiProduct } from '@/services/api';
+import { purchaseService, supplierService, apiProductService, categoryService, type ApiPurchase, type ApiSupplier, type ApiProduct, type ApiCategory } from '@/services/api';
 import { Toolbar, SearchBox } from '@/components/common/Toolbar.tsx';
 import { Button } from '@/components/common/Button.tsx';
 import { DataTable } from '@/components/common/DataTable';
@@ -25,6 +25,7 @@ const COLUMNS: TableColumn[] = [
 
 const STATUS_OPTIONS = ['Pending', 'Paid', 'Partial', 'Overdue', 'Cancelled'];
 const PAYMENT_OPTIONS = ['Cash', 'UPI', 'Cheque', 'Bank Transfer', 'Credit'];
+const NEW_PRODUCT_VALUE = '__new_product__';
 const EXPORT_DATE_RANGES = [
   { label: 'Last 10 days', value: 10 },
   { label: 'Last 30 days', value: 30 },
@@ -41,6 +42,7 @@ export default function Purchases() {
   const [purchases, setPurchases]       = useState<ApiPurchase[]>([]);
   const [suppliers, setSuppliers]       = useState<ApiSupplier[]>([]);
   const [products, setProducts]         = useState<ApiProduct[]>([]);
+  const [categories, setCategories]     = useState<ApiCategory[]>([]);
   const [loading, setLoading]           = useState(true);
   const [search, setSearch]             = useState('');
   const [statusFilter, setStatusFilter] = useState('');
@@ -58,14 +60,16 @@ export default function Purchases() {
   const fetchAll = useCallback(async () => {
     setLoading(true);
     try {
-      const [purch, supps, prods] = await Promise.all([
+      const [purch, supps, prods, cats] = await Promise.all([
         purchaseService.getAll({ business: toggle, search: search || undefined, status: statusFilter || undefined }),
         supplierService.getAll({ business: toggle }),
         apiProductService.getAll({ business: toggle }),
+        categoryService.getAll(toggle),
       ]);
       setPurchases(purch);
       setSuppliers(supps);
       setProducts(prods);
+      setCategories(cats);
     } catch {
       message.error('Failed to load purchases');
     } finally {
@@ -86,7 +90,12 @@ export default function Purchases() {
       status: 'Pending',
       received: false,
       business: toggle.toUpperCase(),
-      items: [{ productId: '', quantity: 1, purchasePrice: 0, cashDiscountPercent: 0, gstRate: 18, hsn: '' }],
+      items: [{
+        productId: '', quantity: 1, packs: 0, volume: '', purchasePrice: 0,
+        inBillDiscountPercent: 0, inBillDiscountAmount: 0,
+        inBillDiscount2Percent: 0, inBillDiscount2Amount: 0,
+        cashDiscountPercent: 0, gstRate: 18, hsn: '',
+      }],
     });
     setModalOpen(true);
   };
@@ -107,11 +116,22 @@ export default function Purchases() {
       items: p.items?.map((i) => ({
         productId: i.productId,
         quantity: i.quantity,
+        packs: i.packs ?? 0,
+        volume: i.volume || products.find((product) => product.id === i.productId)?.unit || '',
         purchasePrice: i.purchasePrice,
+        inBillDiscountPercent: i.inBillDiscountPercent ?? 0,
+        inBillDiscountAmount: i.inBillDiscountAmount ?? 0,
+        inBillDiscount2Percent: i.inBillDiscount2Percent ?? 0,
+        inBillDiscount2Amount: i.inBillDiscount2Amount ?? 0,
         cashDiscountPercent: i.cashDiscountPercent ?? 0,
         gstRate: i.gstRate,
         hsn: i.hsn || products.find((product) => product.id === i.productId)?.hsn || '',
-      })) ?? [{ productId: '', quantity: 1, purchasePrice: 0, cashDiscountPercent: 0, gstRate: 18 }],
+      })) ?? [{
+        productId: '', quantity: 1, packs: 0, volume: '', purchasePrice: 0,
+        inBillDiscountPercent: 0, inBillDiscountAmount: 0,
+        inBillDiscount2Percent: 0, inBillDiscount2Amount: 0,
+        cashDiscountPercent: 0, gstRate: 18,
+      }],
     });
     setModalOpen(true);
   };
@@ -120,19 +140,33 @@ export default function Purchases() {
     try {
       const values = await form.validateFields();
       setSaving(true);
+      const addsNewProducts = values.items.some((item: any) => item.productId === NEW_PRODUCT_VALUE);
       const payload = {
         ...values,
         items: values.items.map((item: any) => {
           const prod = products.find((p) => p.id === item.productId);
+          const category = categories.find((c) => c.id === item.newProduct?.categoryId);
           return {
-            productId: item.productId,
-            productName: prod?.name ?? '',
+            productId: item.productId === NEW_PRODUCT_VALUE ? undefined : item.productId,
+            productName: prod?.name ?? item.newProduct?.name ?? '',
             quantity: Number(item.quantity),
+            packs: Number(item.packs ?? 0),
+            volume: item.volume || prod?.unit || item.newProduct?.unit || '',
             purchasePrice: Number(item.purchasePrice),
+            inBillDiscountPercent: Number(item.inBillDiscountPercent ?? 0),
+            inBillDiscountAmount: Number(item.inBillDiscountAmount ?? 0),
+            inBillDiscount2Percent: Number(item.inBillDiscount2Percent ?? 0),
+            inBillDiscount2Amount: Number(item.inBillDiscount2Amount ?? 0),
             cashDiscountPercent: Number(item.cashDiscountPercent ?? 0),
             gstRate: Number(item.gstRate ?? 18),
-            hsn: item.hsn || prod?.hsn || '',
+            hsn: item.hsn || item.newProduct?.hsn || prod?.hsn || '',
             amount: Number(item.quantity) * Number(item.purchasePrice) * (1 - Number(item.cashDiscountPercent ?? 0) / 100),
+            ...(item.productId === NEW_PRODUCT_VALUE ? {
+              newProduct: {
+                ...item.newProduct,
+                categoryName: category?.name ?? '',
+              },
+            } : {}),
           };
         }),
       };
@@ -141,11 +175,14 @@ export default function Purchases() {
         message.success('Purchase updated');
       } else {
         await purchaseService.create(payload);
-        message.success('Purchase created');
+        await fetchAll();
+        message.success(addsNewProducts
+          ? 'Purchase created. New products have been added to the Product Catalog.'
+          : 'Purchase created successfully');
       }
       setModalOpen(false);
       form.resetFields();
-      fetchAll();
+      if (editing) await fetchAll();
     } catch (err: any) {
       if (err?.errorFields) return;
       message.error(err?.response?.data?.error || 'Failed to save purchase');
@@ -337,7 +374,12 @@ export default function Purchases() {
               <div className="space-y-3 mt-2">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-bold uppercase tracking-widest text-ink-3">Items</span>
-                  <Button type="button" variant="ghost" size="sm" icon={Plus} onClick={() => add({ productId: '', quantity: 1, purchasePrice: 0, cashDiscountPercent: 0, gstRate: 18, hsn: '' })}>
+                  <Button type="button" variant="ghost" size="sm" icon={Plus} onClick={() => add({
+                    productId: '', quantity: 1, packs: 0, volume: '', purchasePrice: 0,
+                    inBillDiscountPercent: 0, inBillDiscountAmount: 0,
+                    inBillDiscount2Percent: 0, inBillDiscount2Amount: 0,
+                    cashDiscountPercent: 0, gstRate: 18, hsn: '',
+                  })}>
                     Add Item
                   </Button>
                 </div>
@@ -346,7 +388,10 @@ export default function Purchases() {
                     <Form.Item name={[field.name, 'productId']} label="Product" rules={[{ required: true, message: 'Required' }]} className="col-span-12 md:col-span-3">
                       <Select
                         placeholder="Choose product" showSearch optionFilterProp="label"
-                        options={products.map((p) => ({ label: `${p.name} (${p.sku})`, value: p.id }))}
+                        options={[
+                          ...(!editing ? [{ label: '+ Add new product to catalog', value: NEW_PRODUCT_VALUE }] : []),
+                          ...products.map((p) => ({ label: p.name, value: p.id })),
+                        ]}
                         onChange={(val) => {
                           const prod = products.find((p) => p.id === val);
                           if (prod) {
@@ -354,10 +399,54 @@ export default function Purchases() {
                             items[field.name].purchasePrice = prod.purchasePrice;
                             items[field.name].gstRate = prod.gstRate;
                             items[field.name].hsn = prod.hsn ?? '';
+                            items[field.name].volume = prod.unit ?? '';
                             form.setFieldValue('items', [...items]);
+                          } else if (val === NEW_PRODUCT_VALUE) {
+                            form.setFieldValue(['items', field.name, 'newProduct'], {
+                              name: '',
+                              categoryId: undefined,
+                              brand: '',
+                              color: '',
+                              sellingPrice: undefined,
+                              unit: '',
+                              minStock: 0,
+                              description: '',
+                            });
                           }
                         }}
                       />
+                    </Form.Item>
+                    <Form.Item noStyle shouldUpdate={(previous, current) =>
+                      previous.items?.[field.name]?.productId !== current.items?.[field.name]?.productId
+                    }>
+                      {({ getFieldValue }) => getFieldValue(['items', field.name, 'productId']) === NEW_PRODUCT_VALUE ? (
+                        <div className="col-span-12 grid grid-cols-1 md:grid-cols-2 gap-x-4 rounded-xl border border-border bg-white p-3">
+                          <Form.Item name={[field.name, 'newProduct', 'name']} label="Product Name" rules={[{ required: true, message: 'Required' }]}>
+                            <Input placeholder="Product name" />
+                          </Form.Item>
+                          <Form.Item name={[field.name, 'newProduct', 'categoryId']} label="Category" rules={[{ required: true, message: 'Required' }]}>
+                            <Select placeholder="Select category" options={categories.map((category) => ({ label: category.name, value: category.id }))} />
+                          </Form.Item>
+                          <Form.Item name={[field.name, 'newProduct', 'brand']} label="Brand" rules={[{ required: true, message: 'Required' }]}>
+                            <Input placeholder="Brand" />
+                          </Form.Item>
+                          <Form.Item name={[field.name, 'newProduct', 'color']} label="Color">
+                            <Input placeholder="Color or variant" />
+                          </Form.Item>
+                          <Form.Item name={[field.name, 'newProduct', 'sellingPrice']} label="Selling Price (₹)" rules={[{ required: true, message: 'Required' }]}>
+                            <InputNumber min={0} className="w-full" />
+                          </Form.Item>
+                          <Form.Item name={[field.name, 'newProduct', 'unit']} label="Unit" rules={[{ required: true, message: 'Required' }]}>
+                            <Input placeholder="e.g. Liter, Kg, Piece" />
+                          </Form.Item>
+                          <Form.Item name={[field.name, 'newProduct', 'minStock']} label="Min Stock Alert">
+                            <InputNumber min={0} className="w-full" />
+                          </Form.Item>
+                          <Form.Item name={[field.name, 'newProduct', 'description']} label="Description (optional)">
+                            <Input placeholder="Short product description" />
+                          </Form.Item>
+                        </div>
+                      ) : null}
                     </Form.Item>
                     <Form.Item name={[field.name, 'hsn']} label="HSN Code" className="col-span-6 md:col-span-2">
                       <Input placeholder="HSN code" />
@@ -365,7 +454,25 @@ export default function Purchases() {
                     <Form.Item name={[field.name, 'quantity']} label="Qty" rules={[{ required: true }]} className="col-span-3 md:col-span-2">
                       <InputNumber min={1} className="w-full" />
                     </Form.Item>
+                    <Form.Item name={[field.name, 'packs']} label="Packs" className="col-span-3 md:col-span-2">
+                      <InputNumber min={0} className="w-full" />
+                    </Form.Item>
+                    <Form.Item name={[field.name, 'volume']} label="Volume (kg/lt/M)" className="col-span-6 md:col-span-3">
+                      <Input placeholder="e.g. 20 lt, 5 kg, 1 M" />
+                    </Form.Item>
                     <Form.Item name={[field.name, 'purchasePrice']} label="Price (₹)" rules={[{ required: true }]} className="col-span-4 md:col-span-2">
+                      <InputNumber min={0} className="w-full" />
+                    </Form.Item>
+                    <Form.Item name={[field.name, 'inBillDiscountPercent']} label="In-Bill Disc (%)" className="col-span-3 md:col-span-2">
+                      <InputNumber min={0} max={100} className="w-full" />
+                    </Form.Item>
+                    <Form.Item name={[field.name, 'inBillDiscountAmount']} label="In-Bill Disc (₹)" className="col-span-3 md:col-span-2">
+                      <InputNumber min={0} className="w-full" />
+                    </Form.Item>
+                    <Form.Item name={[field.name, 'inBillDiscount2Percent']} label="In-Bill Disc 2 (%)" className="col-span-3 md:col-span-2">
+                      <InputNumber min={0} max={100} className="w-full" />
+                    </Form.Item>
+                    <Form.Item name={[field.name, 'inBillDiscount2Amount']} label="In-Bill Disc 2 (₹)" className="col-span-3 md:col-span-2">
                       <InputNumber min={0} className="w-full" />
                     </Form.Item>
                     <Form.Item name={[field.name, 'cashDiscountPercent']} label="Cash Disc %" className="col-span-3 md:col-span-2">

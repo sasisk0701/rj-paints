@@ -77,6 +77,8 @@ npx prisma db push
 npm run dev
 ```
 
+After pulling backend schema changes, run `npx prisma generate` and `npx prisma db push` from `server` before restarting the backend.
+
 If `server/.env` already exists, update only its `DATABASE_URL` to
 `mysql://rj_admin:rj_paints_dev_password@localhost:3306/rj_paints_db` for the local
 Docker database. These credentials are for local development; use your own secure

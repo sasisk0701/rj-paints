@@ -94,14 +94,15 @@ function addSalesWorksheet(
   sheet.getCell('A6').fill = titleFill;
   sheet.getRow(6).height = 30;
 
-  mergeLabelValue(sheet, 8, 1, 4, `Customer: ${sale.customerName}`, true);
-  mergeLabelValue(sheet, 8, 5, 8, `Invoice No: ${sale.invoiceNumber}`, true);
-  mergeLabelValue(sheet, 9, 1, 4, `Phone: ${sale.customerPhone}`);
-  mergeLabelValue(sheet, 9, 5, 8, `Date: ${formatDate(sale.saleDate)}`);
-  mergeLabelValue(sheet, 10, 1, 4, `Payment Mode: ${sale.paymentMode}`);
-  mergeLabelValue(sheet, 10, 5, 8, `Status: ${sale.status}`);
+  mergeLabelValue(sheet, 8, 1, 4, 'To', true);
+  mergeLabelValue(sheet, 8, 5, 8, `Payment Terms: ${sale.paymentMode}`, true);
+  mergeLabelValue(sheet, 9, 1, 4, `Name: ${sale.customerName}`);
+  mergeLabelValue(sheet, 9, 5, 8, `Bill No: ${sale.invoiceNumber}`);
+  mergeLabelValue(sheet, 10, 1, 4, `Phone No: ${sale.customerPhone}`);
+  mergeLabelValue(sheet, 10, 5, 8, `Date: ${formatDate(sale.saleDate)}`);
+  mergeLabelValue(sheet, 11, 1, 4, 'GSTIN: —');
 
-  const headers = ['S.No', 'HSN', 'Description', 'Qty', 'Unit', 'Rate (₹)', 'GST %', 'Amount (₹)'];
+  const headers = ['S.No', 'Description', 'HSN/SAC', 'Qty', 'Rate (₹)', 'Tax %', 'Amount (₹)'];
   const headerRow = 12;
   const header = sheet.getRow(headerRow);
   header.values = [undefined, ...headers];
@@ -130,10 +131,9 @@ function addSalesWorksheet(
     row.values = [
       undefined,
       index + 1,
-      product?.hsn || '—',
       item.productName,
+      product?.hsn || '—',
       quantity,
-      product?.unit || '—',
       rate,
       Number(item.gstRate) || 0,
       lineTaxable + lineGst,
@@ -141,16 +141,29 @@ function addSalesWorksheet(
     row.height = 22;
     row.eachCell((cell, column) => {
       cell.font = { name: 'Arial', size: 9, color: { argb: 'FF111827' } };
-      cell.alignment = { vertical: 'middle', horizontal: [1, 2, 4, 5, 7].includes(column) ? 'center' : 'left', wrapText: true };
+      cell.alignment = { vertical: 'middle', horizontal: [1, 2, 3, 4, 6].includes(column) ? 'center' : 'left', wrapText: true };
       cell.border = border;
-      if (column === 7 || column === 9) cell.numFmt = currencyFormat;
-      if (column === 8) cell.numFmt = '0.##"%"';
+      if (column === 5 || column === 7) cell.numFmt = currencyFormat;
+      if (column === 6) cell.numFmt = '0.##"%"';
     });
     subtotal += lineSubtotal;
     discount += lineDiscount;
     taxable += lineTaxable;
     gstAmount += lineGst;
   });
+
+  const itemsTotalRow = headerRow + Math.max(items.length, 1) + 1;
+  sheet.mergeCells(itemsTotalRow, 1, itemsTotalRow, 6);
+  sheet.getCell(itemsTotalRow, 1).value = 'Total';
+  sheet.getCell(itemsTotalRow, 7).value = sale.totalAmount;
+  sheet.getCell(itemsTotalRow, 7).numFmt = currencyFormat;
+  sheet.getRow(itemsTotalRow).height = 24;
+  for (let column = 1; column <= 7; column += 1) {
+    const cell = sheet.getCell(itemsTotalRow, column);
+    cell.border = border;
+    cell.font = { name: 'Arial', size: 10, bold: true };
+    cell.fill = titleFill;
+  }
 
   const summaryStart = headerRow + Math.max(items.length, 1) + 2;
   const summary = [
@@ -174,13 +187,7 @@ function addSalesWorksheet(
     }
   });
 
-  const notesRow = summaryStart + summary.length + 1;
-  mergeLabelValue(sheet, notesRow, 1, 8, `Notes: ${sale.notes?.trim() || 'Thank you for your business.'}`);
-  sheet.getCell(`A${notesRow}`).alignment = { vertical: 'middle', wrapText: true };
-  sheet.getRow(notesRow).height = 32;
-  mergeLabelValue(sheet, notesRow + 2, 1, 8, 'For ' + companyName, true);
-  sheet.getCell(`A${notesRow + 2}`).alignment = { horizontal: 'right', vertical: 'middle' };
-  sheet.pageSetup.printArea = `A1:H${notesRow + 2}`;
+  sheet.pageSetup.printArea = `A1:H${summaryStart + summary.length - 1}`;
   sheet.views = [{ state: 'frozen', ySplit: headerRow }];
 }
 

@@ -8,12 +8,18 @@ const COLUMNS = [
   'HSN',
   'Description',
   'Qty',
-  'Volume / Unit',
+  'Packs',
+  'Volume (kg/lt/M)',
   'Rate (INR)',
+  'Rate (%)',
+  'Value',
+  'In Bill Disc (%)',
+  'In Bill Disc (INR)',
+  'In-Bill Disc - 2 (%)',
+  'In-Bill Disc - 2 (INR)',
   'Cash Disc (%)',
   'Cash Disc (INR)',
   'Taxable Amount',
-  'Tax Rate (%)',
   'Tax Amount',
   'Total Amount',
 ];
@@ -87,10 +93,8 @@ function addPurchaseWorksheet(
   usedSheetNames: Set<string>
 ) {
   const sheet = workbook.addWorksheet(safeSheetName(purchase.poNumber, usedSheetNames));
-  sheet.columns = [
-    { width: 13 }, { width: 30 }, { width: 10 }, { width: 15 }, { width: 15 },
-    { width: 14 }, { width: 16 }, { width: 17 }, { width: 13 }, { width: 16 }, { width: 17 },
-  ];
+  sheet.columns = [12, 30, 9, 9, 18, 14, 10, 15, 14, 16, 15, 17, 13, 16, 17, 15, 17]
+    .map((width) => ({ width }));
   sheet.views = [{ state: 'frozen', ySplit: 15 }];
   sheet.pageSetup = { orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0, paperSize: 9 };
 
@@ -99,37 +103,37 @@ function addPurchaseWorksheet(
     : COMPANY_DETAILS.name;
   const imageId = workbook.addImage({ base64: companyLogo, extension: 'png' });
   sheet.addImage(imageId, 'A1:B4');
-  styleMergedRow(sheet, 1, 3, 11, businessName, undefined, true);
+  styleMergedRow(sheet, 1, 3, 17, businessName, undefined, true);
   sheet.getCell('C1').font = { name: 'Arial', size: 18, bold: true, color: { argb: 'FF17365D' } };
-  styleMergedRow(sheet, 2, 3, 11, COMPANY_DETAILS.address);
-  styleMergedRow(sheet, 3, 3, 11, `Phone: ${COMPANY_DETAILS.contactNumbers.join(' / ')}  |  Email: ${COMPANY_DETAILS.email}`);
-  styleMergedRow(sheet, 4, 3, 11, `GSTIN: ${COMPANY_DETAILS.gstNumber}  |  ${COMPANY_DETAILS.website}`);
-  styleMergedRow(sheet, 5, 1, 11, 'PURCHASE ORDER', headerFill, true);
+  styleMergedRow(sheet, 2, 3, 17, COMPANY_DETAILS.address);
+  styleMergedRow(sheet, 3, 3, 17, `Phone: ${COMPANY_DETAILS.contactNumbers.join(' / ')}  |  Email: ${COMPANY_DETAILS.email}`);
+  styleMergedRow(sheet, 4, 3, 17, `GSTIN: ${COMPANY_DETAILS.gstNumber}  |  ${COMPANY_DETAILS.website}`);
+  styleMergedRow(sheet, 5, 1, 17, 'PURCHASE ORDER', headerFill, true);
   sheet.getCell('A5').font = { name: 'Arial', size: 14, bold: true, color: { argb: 'FFFFFFFF' } };
   sheet.getCell('A5').alignment = { horizontal: 'center', vertical: 'middle' };
   sheet.getRow(5).height = 28;
 
-  styleMergedRow(sheet, 7, 1, 5, 'BILL TO PARTY', sectionFill, true);
-  styleMergedRow(sheet, 7, 6, 11, 'SHIP TO PARTY', sectionFill, true);
-  styleMergedRow(sheet, 8, 1, 5, businessName, undefined, true);
-  styleMergedRow(sheet, 8, 6, 11, businessName, undefined, true);
-  styleMergedRow(sheet, 9, 1, 5, COMPANY_DETAILS.address);
-  styleMergedRow(sheet, 9, 6, 11, COMPANY_DETAILS.address);
-  styleMergedRow(sheet, 10, 1, 5, `Phone: ${COMPANY_DETAILS.contactNumbers.join(' / ')}`);
-  styleMergedRow(sheet, 10, 6, 11, `Phone: ${COMPANY_DETAILS.contactNumbers.join(' / ')}`);
-  styleMergedRow(sheet, 11, 1, 5, `GSTIN: ${COMPANY_DETAILS.gstNumber}`);
-  styleMergedRow(sheet, 11, 6, 11, `GSTIN: ${COMPANY_DETAILS.gstNumber}`);
+  styleMergedRow(sheet, 7, 1, 8, 'BILL TO PARTY', sectionFill, true);
+  styleMergedRow(sheet, 7, 9, 17, 'SHIP TO PARTY', sectionFill, true);
+  styleMergedRow(sheet, 8, 1, 8, businessName, undefined, true);
+  styleMergedRow(sheet, 8, 9, 17, businessName, undefined, true);
+  styleMergedRow(sheet, 9, 1, 8, COMPANY_DETAILS.address);
+  styleMergedRow(sheet, 9, 9, 17, COMPANY_DETAILS.address);
+  styleMergedRow(sheet, 10, 1, 8, `Phone: ${COMPANY_DETAILS.contactNumbers.join(' / ')}`);
+  styleMergedRow(sheet, 10, 9, 17, `Phone: ${COMPANY_DETAILS.contactNumbers.join(' / ')}`);
+  styleMergedRow(sheet, 11, 1, 8, `GSTIN: ${COMPANY_DETAILS.gstNumber}`);
+  styleMergedRow(sheet, 11, 9, 17, `GSTIN: ${COMPANY_DETAILS.gstNumber}`);
 
   const supplier = suppliers.find((item) => item.id === purchase.supplierId);
-  styleMergedRow(sheet, 13, 1, 5, `Supplier / Vendor: ${supplier?.name ?? purchase.supplierName}`, sectionFill, true);
-  styleMergedRow(sheet, 13, 6, 11, `PO Number: ${purchase.poNumber}  |  HSN Code: ${purchase.hsn || '—'}`, sectionFill, true);
-  styleMergedRow(sheet, 14, 1, 5, `Address: ${[supplier?.address, supplier?.city].filter(Boolean).join(', ') || '—'}`);
-  styleMergedRow(sheet, 14, 6, 11, `Purchase Date: ${formatDate(purchase.purchaseDate)}`);
-  styleMergedRow(sheet, 15, 1, 5, `Supplier GSTIN: ${supplier?.gstNumber ?? '—'}`);
-  styleMergedRow(sheet, 15, 6, 11, `Payment Mode: ${purchase.paymentMode}  |  Status: ${purchase.status}  |  Stock Received: ${purchase.received ? 'Yes' : 'No'}`);
-  styleMergedRow(sheet, 16, 1, 5, `Supplier Phone: ${supplier?.phone ?? '—'}`);
-  styleMergedRow(sheet, 16, 6, 11, `Terms of Payment: ${purchase.paymentMode}`);
-  styleMergedRow(sheet, 17, 1, 11, `Remarks: ${purchase.notes?.trim() || '—'}`);
+  styleMergedRow(sheet, 13, 1, 8, `Supplier / Vendor: ${supplier?.name ?? purchase.supplierName}`, sectionFill, true);
+  styleMergedRow(sheet, 13, 9, 17, `PO Number: ${purchase.poNumber}  |  HSN Code: ${purchase.hsn || '—'}`, sectionFill, true);
+  styleMergedRow(sheet, 14, 1, 8, `Address: ${[supplier?.address, supplier?.city].filter(Boolean).join(', ') || '—'}`);
+  styleMergedRow(sheet, 14, 9, 17, `Purchase Date: ${formatDate(purchase.purchaseDate)}`);
+  styleMergedRow(sheet, 15, 1, 8, `Supplier GSTIN: ${supplier?.gstNumber ?? '—'}`);
+  styleMergedRow(sheet, 15, 9, 17, `Payment Mode: ${purchase.paymentMode}  |  Status: ${purchase.status}  |  Stock Received: ${purchase.received ? 'Yes' : 'No'}`);
+  styleMergedRow(sheet, 16, 1, 8, `Supplier Phone: ${supplier?.phone ?? '—'}`);
+  styleMergedRow(sheet, 16, 9, 17, `Terms of Payment: ${purchase.paymentMode}`);
+  styleMergedRow(sheet, 17, 1, 17, `Remarks: ${purchase.notes?.trim() || '—'}`);
 
   const headerRow = 19;
   const header = sheet.getRow(headerRow);
@@ -142,6 +146,9 @@ function addPurchaseWorksheet(
     cell.border = border;
   });
 
+  let valueTotal = 0;
+  let inBillDiscountTotal = 0;
+  let inBillDiscount2Total = 0;
   let taxableTotal = 0;
   let cashDiscountTotal = 0;
   let taxTotal = 0;
@@ -149,24 +156,39 @@ function addPurchaseWorksheet(
   items.forEach((item, index) => {
     const quantity = Number(item.quantity) || 0;
     const rate = Number(item.purchasePrice) || 0;
-    const discountPercent = Number(item.cashDiscountPercent) || 0;
-    const gross = quantity * rate;
-    const cashDiscount = gross * discountPercent / 100;
-    const taxable = gross - cashDiscount;
-    const tax = taxable * (Number(item.gstRate) || 0) / 100;
+    const inBillDiscountPercent = Number(item.inBillDiscountPercent) || 0;
+    const inBillDiscountAmount = Number(item.inBillDiscountAmount) || 0;
+    const inBillDiscount2Percent = Number(item.inBillDiscount2Percent) || 0;
+    const inBillDiscount2Amount = Number(item.inBillDiscount2Amount) || 0;
+    const cashDiscountPercent = Number(item.cashDiscountPercent) || 0;
+    const gstRate = Number(item.gstRate) || 0;
+    const value = quantity * rate;
+    const inBillDiscount = value * inBillDiscountPercent / 100 + inBillDiscountAmount;
+    const afterFirstDiscount = value - inBillDiscount;
+    const inBillDiscount2 = afterFirstDiscount * inBillDiscount2Percent / 100 + inBillDiscount2Amount;
+    const afterSecondDiscount = afterFirstDiscount - inBillDiscount2;
+    const cashDiscount = afterSecondDiscount * cashDiscountPercent / 100;
+    const taxable = afterSecondDiscount - cashDiscount;
+    const tax = taxable * gstRate / 100;
     const product = products.find((entry) => entry.id === item.productId);
     const row = sheet.getRow(headerRow + index + 1);
     row.values = [
       undefined,
       item.hsn || '—',
-      item.productName,
+      product?.description?.trim() || item.productName,
       quantity,
-      product?.unit || '—',
+      item.packs ?? 0,
+      item.volume || product?.unit || '—',
       rate,
-      discountPercent,
+      gstRate,
+      value,
+      inBillDiscountPercent,
+      inBillDiscount,
+      inBillDiscount2Percent,
+      inBillDiscount2,
+      cashDiscountPercent,
       cashDiscount,
       taxable,
-      Number(item.gstRate) || 0,
       tax,
       taxable + tax,
     ];
@@ -174,15 +196,18 @@ function addPurchaseWorksheet(
       cell.font = { name: 'Arial', size: 9, color: { argb: 'FF1F2937' } };
       cell.border = border;
       cell.alignment = { vertical: 'middle', wrapText: column === 2 };
-      if ([5, 7, 8, 10, 11].includes(column)) cell.numFmt = currencyFormat;
-      if (column === 3) cell.numFmt = '0.##';
-      if (column === 6 || column === 9) {
+      if ([6, 8, 10, 12, 14, 15, 16, 17].includes(column)) cell.numFmt = currencyFormat;
+      if ([3, 4].includes(column)) cell.numFmt = '0.##';
+      if ([7, 9, 11, 13].includes(column)) {
         cell.numFmt = '0.##"%"';
       }
-      if ([3, 4, 6, 9].includes(column)) {
+      if ([3, 4, 5, 7, 9, 11, 13].includes(column)) {
         cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
       }
     });
+    valueTotal += value;
+    inBillDiscountTotal += inBillDiscount;
+    inBillDiscount2Total += inBillDiscount2;
     taxableTotal += taxable;
     cashDiscountTotal += cashDiscount;
     taxTotal += tax;
@@ -190,7 +215,9 @@ function addPurchaseWorksheet(
 
   const summaryStart = headerRow + Math.max(items.length, 1) + 2;
   const summaryRows = [
-    ['Gross Value', cashDiscountTotal + taxableTotal],
+    ['Gross Value', valueTotal],
+    ['In-Bill Discount', inBillDiscountTotal],
+    ['In-Bill Discount - 2', inBillDiscount2Total],
     ['Cash Discount', cashDiscountTotal],
     ['Taxable Amount', taxableTotal],
     ['Tax Amount', taxTotal],
@@ -198,11 +225,11 @@ function addPurchaseWorksheet(
   ];
   summaryRows.forEach(([label, value], index) => {
     const rowNumber = summaryStart + index;
-    sheet.mergeCells(rowNumber, 8, rowNumber, 10);
-    sheet.getCell(rowNumber, 8).value = label;
-    sheet.getCell(rowNumber, 11).value = value as number;
-    sheet.getCell(rowNumber, 11).numFmt = currencyFormat;
-    for (let column = 8; column <= 11; column += 1) {
+    sheet.mergeCells(rowNumber, 14, rowNumber, 16);
+    sheet.getCell(rowNumber, 14).value = label;
+    sheet.getCell(rowNumber, 17).value = value as number;
+    sheet.getCell(rowNumber, 17).numFmt = currencyFormat;
+    for (let column = 14; column <= 17; column += 1) {
       const cell = sheet.getCell(rowNumber, column);
       cell.border = border;
       cell.font = { name: 'Arial', size: 10, bold: index === summaryRows.length - 1 };
@@ -214,7 +241,7 @@ function addPurchaseWorksheet(
     from: { row: headerRow, column: 1 },
     to: { row: headerRow + Math.max(items.length, 1), column: COLUMNS.length },
   };
-  sheet.pageSetup.printArea = `A1:K${summaryStart + summaryRows.length - 1}`;
+  sheet.pageSetup.printArea = `A1:Q${summaryStart + summaryRows.length - 1}`;
 }
 
 export async function exportPurchasesToExcel(

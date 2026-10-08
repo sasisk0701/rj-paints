@@ -49,7 +49,6 @@ export default function Categories() {
       name: cat.name,
       business: cat.business,
       description: cat.description ?? '',
-      hsn: cat.hsn ?? '',
     });
     setModalOpen(true);
   };
@@ -177,10 +176,6 @@ export default function Categories() {
 
           <Form.Item name="description" label="Description (optional)">
             <Input.TextArea rows={2} placeholder="Short description of this category…" />
-          </Form.Item>
-
-          <Form.Item name="hsn" label="HSN Code">
-            <Input placeholder="Enter HSN code" />
           </Form.Item>
 
         </Form>

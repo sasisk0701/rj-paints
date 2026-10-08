@@ -12,6 +12,8 @@ export const resolveAssetUrl = (assetPath?: string | null): string => {
   return `${API_BASE_URL}${assetPath.startsWith('/') ? assetPath : `/${assetPath}`}`;
 };
 
+
+
 export const axiosClient = axios.create({
   baseURL: API_BASE_URL,
   headers: { 'Content-Type': 'application/json' },
@@ -103,11 +105,11 @@ export const categoryService = {
     const { data } = await axiosClient.get('/api/categories', { params: business ? { business } : {} });
     return data;
   },
-  create: async (payload: { name: string; business: string; description?: string; hsn?: string }) => {
+  create: async (payload: { name: string; business: string; description?: string }) => {
     const { data } = await axiosClient.post('/api/categories', payload);
     return data as ApiCategory;
   },
-  update: async (id: string, payload: { name?: string; description?: string; hsn?: string }) => {
+  update: async (id: string, payload: { name?: string; description?: string }) => {
     const { data } = await axiosClient.put(`/api/categories/${id}`, payload);
     return data as ApiCategory;
   },
@@ -412,14 +414,31 @@ export interface ApiPurchase {
 }
 export interface ApiPurchaseItem {
   id: string; productId: string; productName: string; hsn: string;
-  quantity: number; purchasePrice: number; cashDiscountPercent: number; gstRate: number; amount: number;
+  quantity: number; packs: number; volume: string; purchasePrice: number;
+  inBillDiscountPercent: number; inBillDiscountAmount: number;
+  inBillDiscount2Percent: number; inBillDiscount2Amount: number;
+  cashDiscountPercent: number; gstRate: number; amount: number;
+}
+export interface NewPurchaseProduct {
+  name: string;
+  categoryId: string;
+  categoryName: string;
+  brand: string;
+  color?: string;
+  hsn?: string;
+  sellingPrice: number;
+  unit: string;
+  minStock?: number;
+  description?: string;
 }
 export const purchaseService = {
   getAll: async (filters?: { business?: string; search?: string; status?: string }): Promise<ApiPurchase[]> => {
     const { data } = await axiosClient.get('/api/purchases', { params: filters || {} });
     return data;
   },
-  create: async (payload: Omit<ApiPurchase, 'id' | 'createdAt' | 'subtotal' | 'gstAmount' | 'totalAmount'> & { items: Omit<ApiPurchaseItem, 'id'>[] }): Promise<ApiPurchase> => {
+  create: async (payload: Omit<ApiPurchase, 'id' | 'createdAt' | 'subtotal' | 'gstAmount' | 'totalAmount'> & {
+    items: (Omit<ApiPurchaseItem, 'id' | 'productId'> & { productId?: string; newProduct?: NewPurchaseProduct })[];
+  }): Promise<ApiPurchase> => {
     const { data } = await axiosClient.post('/api/purchases', payload);
     return data;
   },
