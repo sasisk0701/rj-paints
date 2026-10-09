@@ -608,7 +608,7 @@ app.post('/api/categories', authenticateJWT, async (req: AuthRequest, res) => {
   const { name, business, description, hsn } = req.body;
   if (!name || !business) return res.status(400).json({ error: 'name and business are required' });
   const cat = await prisma.category.create({
-    data: { name, business: business.toUpperCase(), description, hsn: hsn || null },
+    data: { name, business: business.toUpperCase(), description: description || undefined, hsn: hsn || "" },
   });
   await prisma.activityLog.create({
     data: { userId: req.user.id, userName: req.user.name, action: 'Category Created', module: 'Catalog', reference: name },
