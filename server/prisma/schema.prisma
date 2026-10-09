@@ -218,6 +218,7 @@ model PurchaseItem {
   inBillDiscount2Percent Float @default(0)
   inBillDiscount2Amount  Float @default(0)
   cashDiscountPercent Float @default(0)
+  cashDiscountAmount Float @default(0)
   gstRate       Float    @default(18)
   amount        Float
 }
@@ -230,8 +231,10 @@ model Sale {
   customer       Customer?    @relation(fields: [customerId], references: [id])
   customerName   String
   customerPhone  String
+  hsn            String       @default("")
   saleDate       DateTime
   paymentMode    String
+  gstMode        String       @default("B2C")
   status         String       @default("Paid")
   subtotal       Float        @default(0)
   discountAmount Float        @default(0)
@@ -253,6 +256,7 @@ model SaleItem {
   productId    String
   product      Product @relation(fields: [productId], references: [id])
   productName  String
+  hsn          String  @default("")
   quantity     Int
   sellingPrice Float
   discount     Float   @default(0)

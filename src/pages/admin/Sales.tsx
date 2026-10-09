@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Plus, Pencil, Trash2, Download, Eye, Printer } from 'lucide-react';
-import { Form, Input, InputNumber, Select, message } from 'antd';
+import { AutoComplete, Form, Input, InputNumber, Select, message } from 'antd';
 import { useBusiness } from '@/hooks/useBusiness.ts';
 import { saleService, customerService, apiProductService, type ApiSale, type ApiCustomer, type ApiProduct } from '@/services/api';
 import { Toolbar, SearchBox } from '@/components/common/Toolbar.tsx';
@@ -11,20 +11,22 @@ import { Badge } from '@/components/common/Badge';
 import { AppModal } from '@/components/common/AppModal';
 import { ConfirmDialog } from '@/components/common/ConfirmDialog';
 import type { KpiItem, TableColumn, Tone } from '@/types/types';
-import { exportSalesToExcel } from '@/utils/salesExcelExport';
+import { exportSalesToPdf } from '@/utils/transactionPdfExport';
 
 const COLUMNS: TableColumn[] = [
   { key: 'invoice',  label: 'Invoice #' },
   { key: 'date',     label: 'Date' },
   { key: 'customer', label: 'Customer' },
   { key: 'items',    label: 'Items' },
-  { key: 'amount',   label: 'Amount',  align: 'num' },
+  { key: 'gstMode',  label: 'GST Mode' },
+  { key: 'amount',   label: 'Amount',   align: 'num' },
   { key: 'status',   label: 'Status' },
   { key: 'actions',  label: '' },
 ];
 
 const STATUS_OPTIONS  = ['Paid', 'Pending', 'Partial', 'Overdue', 'Cancelled'];
 const PAYMENT_OPTIONS = ['Cash', 'UPI', 'Cheque', 'Bank Transfer', 'Credit'];
+const GST_MODE_OPTIONS = ['B2B', 'B2C', 'Without GST'] as const;
 
 const STATUS_TONE: Record<string, Tone> = {
   Paid: 'success', Pending: 'warn', Partial: 'neutral', Overdue: 'danger', Cancelled: 'danger',
@@ -38,6 +40,7 @@ export default function Sales() {
   const [loading, setLoading]           = useState(true);
   const [search, setSearch]             = useState('');
   const [statusFilter, setStatusFilter] = useState('');
+  const [gstModeFilter, setGstModeFilter] = useState<ApiSale['gstMode'] | ''>('');
   const [modalOpen, setModalOpen]       = useState(false);
   const [viewOpen, setViewOpen]         = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<ApiSale | null>(null);
@@ -52,7 +55,12 @@ export default function Sales() {
     setLoading(true);
     try {
       const [salesRes, custsRes, prodsRes] = await Promise.all([
-        saleService.getAll({ business: toggle, search: search || undefined, status: statusFilter || undefined }),
+        saleService.getAll({
+          business: toggle,
+          search: search || undefined,
+          status: statusFilter || undefined,
+          gstMode: gstModeFilter || undefined,
+        }),
         customerService.getAll({ business: toggle }),
         apiProductService.getAll({ business: toggle }),
       ]);
@@ -64,7 +72,7 @@ export default function Sales() {
     } finally {
       setLoading(false);
     }
-  }, [toggle, search, statusFilter]);
+  }, [toggle, search, statusFilter, gstModeFilter]);
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
 
@@ -73,11 +81,13 @@ export default function Sales() {
     form.resetFields();
     form.setFieldsValue({
       invoiceNumber: `SO-${Date.now()}`,
+      hsn: '',
       saleDate: new Date().toISOString().split('T')[0],
       paymentMode: 'Cash',
       status: 'Paid',
+      gstMode: 'B2C',
       business: toggle.toUpperCase(),
-      items: [{ productId: '', quantity: 1, sellingPrice: 0, discount: 0, gstRate: 18 }],
+      items: [{ productId: '', hsn: '', quantity: 1, sellingPrice: 0, discount: 0, gstRate: 18 }],
     });
     setModalOpen(true);
   };
@@ -89,6 +99,8 @@ export default function Sales() {
       customerId: s.customerId ?? undefined,
       customerName: s.customerName,
       customerPhone: s.customerPhone,
+      hsn: s.hsn ?? '',
+      gstMode: s.gstMode ?? 'B2C',
       saleDate: s.saleDate,
       paymentMode: s.paymentMode,
       status: s.status,
@@ -96,6 +108,7 @@ export default function Sales() {
       business: s.business,
       items: s.items?.map((i) => ({
         productId: i.productId,
+        hsn: i.hsn || products.find((p) => p.id === i.productId)?.hsn || '',
         quantity: i.quantity,
         sellingPrice: i.sellingPrice,
         discount: i.discount,
@@ -119,6 +132,7 @@ export default function Sales() {
           return {
             productId: item.productId,
             productName: prod?.name ?? '',
+            hsn: item.hsn || prod?.hsn || '',
             quantity: qty,
             sellingPrice: price,
             discount: disc,
@@ -164,11 +178,11 @@ export default function Sales() {
     if (!sales.length) { message.warning('No sales to export'); return; }
     try {
       setExporting(true);
-      await exportSalesToExcel(sales, products, toggle);
-      message.success('Sales invoices exported to Excel');
+      exportSalesToPdf(sales, customers, toggle);
+      message.success('Sales invoices exported to PDF');
     } catch (error) {
       console.error('Failed to export sales:', error);
-      message.error('Failed to export sales workbook');
+      message.error('Failed to export sales PDF');
     } finally {
       setExporting(false);
     }
@@ -199,6 +213,7 @@ export default function Sales() {
       date:     s.saleDate,
       customer: s.customerName,
       items:    `${s.items?.length ?? '—'} item(s)`,
+      gstMode:  s.gstMode ?? 'B2C',
       amount:   `₹${s.totalAmount.toLocaleString('en-IN')}`,
       status:   <Badge tone={STATUS_TONE[s.status] ?? 'neutral'}>{s.status}</Badge>,
       actions: (
@@ -225,13 +240,19 @@ export default function Sales() {
               onChange={(v) => setStatusFilter(v ?? '')}
               options={STATUS_OPTIONS.map((s) => ({ label: s, value: s }))}
             />
+            <Select
+              placeholder="GST Modes" allowClear size="small" style={{ width: 150 }}
+              value={gstModeFilter || undefined}
+              onChange={(value) => setGstModeFilter(GST_MODE_OPTIONS.find((mode) => mode === value) ?? '')}
+              options={GST_MODE_OPTIONS.map((mode) => ({ label: mode, value: mode }))}
+            />
             <SearchBox placeholder="Search invoice, customer…" value={search} onChange={(e) => setSearch(e.target.value)} />
           </>
         }
         right={
           <>
             <Button variant="ghost" size="sm" icon={Download} onClick={handleExport} disabled={exporting}>
-              {exporting ? 'Exporting…' : 'Export'}
+              {exporting ? 'Exporting…' : 'Export PDF'}
             </Button>
             <Button variant="primary" size="sm" icon={Plus} onClick={openAdd}>New Sale</Button>
           </>
@@ -267,27 +288,44 @@ export default function Sales() {
             <Form.Item name="invoiceNumber" label="Invoice Number" rules={[{ required: true, message: 'Required' }]}>
               <Input placeholder="SO-1001" />
             </Form.Item>
-            <Form.Item name="customerId" label="Customer">
-              <Select
-                placeholder="Select customer (optional)" allowClear showSearch optionFilterProp="label"
-                options={customers.map((c) => ({ label: c.name, value: c.id }))}
-                onChange={(val) => {
-                  const cust = customers.find((c) => c.id === val);
-                  if (cust) {
-                    form.setFieldValue('customerName', cust.name);
-                    form.setFieldValue('customerPhone', cust.phone);
+            <Form.Item name="customerId" hidden>
+              <Input />
+            </Form.Item>
+            <Form.Item name="customerName" label="Customer Name" rules={[{ required: true, message: 'Required' }]}>
+              <AutoComplete
+                placeholder="Type or select a customer"
+                options={customers.map((customer) => ({
+                  value: customer.name,
+                  label: customer.phone ? `${customer.name} · ${customer.phone}` : customer.name,
+                }))}
+                onChange={(value) => {
+                  const selectedCustomerId = form.getFieldValue('customerId');
+                  const selectedCustomer = customers.find((customer) => customer.id === selectedCustomerId);
+                  if (selectedCustomer?.name !== value) {
+                    form.setFieldValue('customerId', undefined);
+                    form.setFieldValue('customerPhone', undefined);
+                  }
+                }}
+                onSelect={(value) => {
+                  const customer = customers.find((entry) => entry.name === value);
+                  if (customer) {
+                    form.setFieldValue('customerId', customer.id);
+                    form.setFieldValue('customerPhone', customer.phone);
                   }
                 }}
               />
             </Form.Item>
-            <Form.Item name="customerName" label="Customer Name" rules={[{ required: true, message: 'Required' }]}>
-              <Input placeholder="Sri Lakshmi Hardware" />
-            </Form.Item>
             <Form.Item name="customerPhone" label="Customer Phone" rules={[{ required: true, message: 'Required' }]}>
               <Input placeholder="9488475040" />
             </Form.Item>
+            <Form.Item name="hsn" label="HSN Code">
+              <Input placeholder="Enter HSN code" />
+            </Form.Item>
             <Form.Item name="saleDate" label="Sale Date" rules={[{ required: true, message: 'Required' }]}>
               <Input type="date" />
+            </Form.Item>
+            <Form.Item name="gstMode" label="GST Mode" rules={[{ required: true, message: 'Required' }]}>
+              <Select options={GST_MODE_OPTIONS.map((mode) => ({ label: mode, value: mode }))} />
             </Form.Item>
             <Form.Item name="paymentMode" label="Payment Mode" rules={[{ required: true }]}>
               <Select options={PAYMENT_OPTIONS.map((v) => ({ label: v, value: v }))} />
@@ -306,28 +344,30 @@ export default function Sales() {
               <div className="space-y-3 mt-2">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-bold uppercase tracking-widest text-ink-3">Items</span>
-                  <Button type="button" variant="ghost" size="sm" icon={Plus} onClick={() => add({ productId: '', quantity: 1, sellingPrice: 0, discount: 0, gstRate: 18 })}>
+                  <Button type="button" variant="ghost" size="sm" icon={Plus} onClick={() => add({ productId: '', hsn: '', quantity: 1, sellingPrice: 0, discount: 0, gstRate: 18 })}>
                     Add Item
                   </Button>
                 </div>
                 {fields.map((field) => (
                   <div key={field.key} className="grid grid-cols-12 gap-3 items-end rounded-2xl border border-border bg-surface-2 p-4">
-                    <Form.Item name={[field.name, 'productId']} label="Product" rules={[{ required: true, message: 'Required' }]} className="col-span-12 md:col-span-4">
+                    <Form.Item name={[field.name, 'productId']} label="Product" rules={[{ required: true, message: 'Required' }]} className="col-span-12 md:col-span-3">
                       <Select
                         placeholder="Choose product" showSearch optionFilterProp="label"
                         options={products.map((p) => ({ label: `${p.name} (${p.sku})`, value: p.id }))}
                         onChange={(val) => {
                           const prod = products.find((p) => p.id === val);
+                          const items = form.getFieldValue('items');
+                          if (!items?.[field.name]) return;
+                          items[field.name].hsn = prod?.hsn ?? '';
                           if (prod) {
-                            const items = form.getFieldValue('items');
                             items[field.name].sellingPrice = prod.sellingPrice;
                             items[field.name].gstRate = prod.gstRate;
-                            form.setFieldValue('items', [...items]);
                           }
+                          form.setFieldValue('items', [...items]);
                         }}
                       />
                     </Form.Item>
-                    <Form.Item name={[field.name, 'quantity']} label="Qty" rules={[{ required: true }]} className="col-span-3 md:col-span-2">
+                    <Form.Item name={[field.name, 'quantity']} label="Qty" rules={[{ required: true }]} className="col-span-3 md:col-span-1">
                       <InputNumber min={1} className="w-full" />
                     </Form.Item>
                     <Form.Item name={[field.name, 'sellingPrice']} label="Price (₹)" rules={[{ required: true }]} className="col-span-4 md:col-span-2">
@@ -362,8 +402,17 @@ export default function Sales() {
       >
         {viewing && (
           <div className="space-y-4 print:text-black" id="print-invoice">
+            <div className="text-sm">
+              <div className="font-semibold">Customer: {viewing.customerName}</div>
+              {(() => {
+                const customer = customers.find((entry) => entry.id === viewing.customerId)
+                  ?? customers.find((entry) => entry.name === viewing.customerName && entry.phone === viewing.customerPhone);
+                const address = [customer?.address, customer?.city].filter(Boolean).join(', ');
+                return address ? <div>Address: {address}</div> : null;
+              })()}
+              <div>Phone: {viewing.customerPhone}</div>
+            </div>
             <div className="grid grid-cols-2 gap-3 text-sm">
-              <div><span className="text-ink-3 text-xs">Customer Phone</span><div className="font-medium">{viewing.customerPhone}</div></div>
               <div><span className="text-ink-3 text-xs">Status</span><div><Badge tone={STATUS_TONE[viewing.status] ?? 'neutral'}>{viewing.status}</Badge></div></div>
               <div><span className="text-ink-3 text-xs">Payment Mode</span><div className="font-medium">{viewing.paymentMode}</div></div>
               <div><span className="text-ink-3 text-xs">Total Amount</span><div className="font-bold text-lg">₹{viewing.totalAmount.toLocaleString('en-IN')}</div></div>
@@ -372,7 +421,7 @@ export default function Sales() {
               <table className="w-full text-sm border-collapse">
                 <thead>
                   <tr className="bg-surface-2">
-                    {['Product', 'Qty', 'Price', 'Disc', 'GST%', 'Amount'].map((h) => (
+                    {['HSN', 'Product', 'Qty', 'Price', 'Disc', 'GST%', 'Amount'].map((h) => (
                       <th key={h} className="text-left text-xs font-bold text-ink-3 px-3 py-2 border-b border-border">{h}</th>
                     ))}
                   </tr>
@@ -380,6 +429,7 @@ export default function Sales() {
                 <tbody>
                   {viewing.items.map((item) => (
                     <tr key={item.id} className="border-b border-border">
+                      <td className="px-3 py-2">{item.hsn || '—'}</td>
                       <td className="px-3 py-2">{item.productName}</td>
                       <td className="px-3 py-2">{item.quantity}</td>
                       <td className="px-3 py-2">₹{item.sellingPrice.toLocaleString('en-IN')}</td>
@@ -391,7 +441,7 @@ export default function Sales() {
                 </tbody>
                 <tfoot>
                   <tr className="bg-surface-2 font-bold">
-                    <td colSpan={5} className="px-3 py-2 text-right">Total</td>
+                    <td colSpan={6} className="px-3 py-2 text-right">Total</td>
                     <td className="px-3 py-2">₹{viewing.totalAmount.toLocaleString('en-IN')}</td>
                   </tr>
                 </tfoot>

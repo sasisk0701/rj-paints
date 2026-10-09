@@ -22,6 +22,13 @@ const COLUMNS: TableColumn[] = [
   { key: "reference", label: "Reference" },
 ];
 
+const IN_STOCK_COLUMNS: TableColumn[] = [
+  { key: "product", label: "Product" },
+  { key: "sku", label: "SKU" },
+  { key: "stock", label: "Available Stock", align: "num" },
+  { key: "status", label: "Status" },
+];
+
 type StockInFormValues = {
   invoiceNo: string;
   supplierName: string;
@@ -88,6 +95,21 @@ export default function StockIn() {
       reference: <span className="font-mono">{r.reference}</span>,
     }));
   }, [data, search, paymentFilter]);
+
+  const inStockRows = useMemo(() => products
+    .filter((product) => product.status === "In Stock" && product.stock > 0)
+    .filter((product) =>
+      !search ||
+      product.name.toLowerCase().includes(search.toLowerCase()) ||
+      (product.sku ?? "").toLowerCase().includes(search.toLowerCase())
+    )
+    .map((product) => ({
+      id: product.id,
+      product: product.name,
+      sku: product.sku || "—",
+      stock: String(product.stock),
+      status: <Badge tone="success">In Stock</Badge>,
+    })), [products, search]);
 
   const sourceOptions = useMemo(() => {
     const sources = [...new Set((data?.rows ?? []).map((r) => r.source).filter(Boolean))];
@@ -166,6 +188,13 @@ export default function StockIn() {
         title="Stock In History"
         subtitle={`${toggle === "paints" ? "Paints" : "Interiors"} business`}
         paginationText={data?.pagination ?? "Loading..."}
+      />
+      <DataTable
+        columns={IN_STOCK_COLUMNS}
+        rows={inStockRows}
+        title="In Stock Products"
+        subtitle="Products currently available in stock"
+        paginationText={`Showing ${inStockRows.length} product${inStockRows.length === 1 ? "" : "s"}`}
       />
 
       <AppModal

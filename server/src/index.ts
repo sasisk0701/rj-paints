@@ -1762,6 +1762,7 @@ type PurchaseItemAmounts = {
   inBillDiscount2Percent: number;
   inBillDiscount2Amount: number;
   cashDiscountPercent: number;
+  cashDiscountAmount: number;
   value: number;
   inBillDiscount: number;
   inBillDiscount2: number;
@@ -1782,15 +1783,16 @@ function calculatePurchaseItemAmounts(item: Record<string, unknown>): PurchaseIt
   const inBillDiscount2Percent = Number(item.inBillDiscount2Percent ?? 0);
   const inBillDiscount2Amount = Number(item.inBillDiscount2Amount ?? 0);
   const cashDiscountPercent = Number(item.cashDiscountPercent ?? 0);
+  const cashDiscountAmount = Number(item.cashDiscountAmount ?? 0);
   const inputs = [
     quantity, packs, purchasePrice, gstRate, inBillDiscountPercent, inBillDiscountAmount,
-    inBillDiscount2Percent, inBillDiscount2Amount, cashDiscountPercent,
+    inBillDiscount2Percent, inBillDiscount2Amount, cashDiscountPercent, cashDiscountAmount,
   ];
   if (!inputs.every(Number.isFinite)
     || !Number.isInteger(quantity) || !Number.isInteger(packs)
     || quantity < 1 || packs < 0 || purchasePrice < 0 || gstRate < 0
     || [inBillDiscountPercent, inBillDiscount2Percent, cashDiscountPercent].some((value) => value < 0 || value > 100)
-    || [inBillDiscountAmount, inBillDiscount2Amount].some((value) => value < 0)) {
+    || [inBillDiscountAmount, inBillDiscount2Amount, cashDiscountAmount].some((value) => value < 0)) {
     throw new Error('Purchase quantities, prices, tax and discounts must be valid non-negative values; discount rates cannot exceed 100%');
   }
 
@@ -1799,14 +1801,14 @@ function calculatePurchaseItemAmounts(item: Record<string, unknown>): PurchaseIt
   const afterFirstDiscount = value - inBillDiscount;
   const inBillDiscount2 = afterFirstDiscount * inBillDiscount2Percent / 100 + inBillDiscount2Amount;
   const afterSecondDiscount = afterFirstDiscount - inBillDiscount2;
-  const cashDiscount = afterSecondDiscount * cashDiscountPercent / 100;
+  const cashDiscount = afterSecondDiscount * cashDiscountPercent / 100 + cashDiscountAmount;
   const taxableAmount = afterSecondDiscount - cashDiscount;
   if (taxableAmount < 0) throw new Error('Total discounts cannot exceed the purchase value');
 
   const taxAmount = taxableAmount * gstRate / 100;
   return {
     quantity, packs, volume, purchasePrice, gstRate, inBillDiscountPercent, inBillDiscountAmount,
-    inBillDiscount2Percent, inBillDiscount2Amount, cashDiscountPercent, value,
+    inBillDiscount2Percent, inBillDiscount2Amount, cashDiscountPercent, cashDiscountAmount, value,
     inBillDiscount, inBillDiscount2, cashDiscount, taxableAmount, taxAmount,
     totalAmount: taxableAmount + taxAmount,
   };
@@ -1842,6 +1844,7 @@ app.get('/api/purchases', authenticateJWT, async (req, res) => {
       inBillDiscount2Percent: i.inBillDiscount2Percent,
       inBillDiscount2Amount:  i.inBillDiscount2Amount,
       cashDiscountPercent: i.cashDiscountPercent,
+      cashDiscountAmount: i.cashDiscountAmount,
       gstRate:       i.gstRate,
       amount:        i.amount,
     })),
@@ -1854,7 +1857,7 @@ app.post('/api/purchases', authenticateJWT, async (req: AuthRequest, res) => {
   if (!poNumber || !supplierName || !purchaseDate || !paymentMode || !Array.isArray(items) || !items.length)
     return res.status(400).json({ error: 'poNumber, supplierName, purchaseDate, paymentMode and items are required' });
   try {
-    const isReceived = received === true;
+    const isReceived = received !== false;
     const purchaseBusiness = (business || 'PAINTS').toUpperCase() as any;
     const purchase = await prisma.$transaction(async (tx) => {
       let subtotal = 0, gstAmount = 0, totalAmount = 0;
@@ -1867,34 +1870,69 @@ app.post('/api/purchases', authenticateJWT, async (req: AuthRequest, res) => {
         if (item.newProduct) {
           const details = item.newProduct;
           if (!details.name?.trim() || !details.brand?.trim()
-            || details.sellingPrice == null || !Number.isFinite(Number(details.sellingPrice))
-            || !details.unit?.trim()) {
-            throw new Error('New products require a name, brand, selling price and unit');
+            || !details.unit?.trim()
+            || !Number.isFinite(Number(details.sellingPrice ?? 0))
+            || !Number.isFinite(Number(details.minStock ?? 0))
+            || !Number.isFinite(Number(details.openingStock ?? 0))
+            || Number(details.sellingPrice ?? 0) < 0
+            || Number(details.minStock ?? 0) < 0
+            || Number(details.openingStock ?? 0) < 0
+            || !Number.isInteger(Number(details.minStock ?? 0))
+            || !Number.isInteger(Number(details.openingStock ?? 0))) {
+            throw new Error('New products require a name, brand and unit; prices and stock values must be valid non-negative numbers');
           }
-          const product = await tx.product.create({
-            data: {
-              name: details.name,
-              categoryId: details.categoryId || null,
-              categoryName: details.categoryName || '',
-              brand: details.brand,
-              color: details.color || '',
-              sku: details.sku || null,
-              barcode: details.barcode || null,
-              description: details.description || null,
-              hsn: details.hsn || item.hsn || '',
-              purchasePrice: amounts.purchasePrice,
-              sellingPrice: Number(details.sellingPrice),
-              gstRate: amounts.gstRate,
-              stock: 0,
-              minStock: Number(details.minStock ?? 0),
-              unit: details.unit,
-              image: details.image || null,
-              business: purchaseBusiness,
-              status: 'Out of Stock',
-            },
-          });
-          productId = product.id;
-          productName = product.name;
+          const openingStock = Number(details.openingStock ?? 0);
+          const minimumStock = Number(details.minStock ?? 0);
+          if (productId) {
+            const existingProduct = await tx.product.findUnique({ where: { id: productId } });
+            if (!existingProduct || existingProduct.deletedAt) throw new Error(`Product not found: ${productId}`);
+            const nextStock = existingProduct.stock + openingStock;
+            const product = await tx.product.update({
+              where: { id: productId },
+              data: {
+                name: details.name,
+                categoryId: details.categoryId || null,
+                categoryName: details.categoryName || '',
+                brand: details.brand,
+                color: details.color || '',
+                description: details.description || existingProduct.description,
+                hsn: item.hsn || existingProduct.hsn,
+                purchasePrice: amounts.purchasePrice,
+                sellingPrice: Number(details.sellingPrice ?? existingProduct.sellingPrice),
+                gstRate: amounts.gstRate,
+                stock: nextStock,
+                minStock: minimumStock,
+                unit: details.unit,
+                status: nextStock === 0 ? 'Out of Stock' : nextStock <= minimumStock ? 'Low Stock' : 'In Stock',
+              },
+            });
+            productName = product.name;
+          } else {
+            const product = await tx.product.create({
+              data: {
+                name: details.name,
+                categoryId: details.categoryId || null,
+                categoryName: details.categoryName || '',
+                brand: details.brand,
+                color: details.color || '',
+                sku: details.sku || null,
+                barcode: details.barcode || null,
+                description: details.description || null,
+                hsn: item.hsn || '',
+                purchasePrice: amounts.purchasePrice,
+                sellingPrice: Number(details.sellingPrice ?? 0),
+                gstRate: amounts.gstRate,
+                stock: openingStock,
+                minStock: minimumStock,
+                unit: details.unit,
+                image: details.image || null,
+                business: purchaseBusiness,
+                status: openingStock === 0 ? 'Out of Stock' : openingStock <= minimumStock ? 'Low Stock' : 'In Stock',
+              },
+            });
+            productId = product.id;
+            productName = product.name;
+          }
         }
         if (!productId) throw new Error('Select an existing product or enter new product details');
 
@@ -1914,6 +1952,7 @@ app.post('/api/purchases', authenticateJWT, async (req: AuthRequest, res) => {
           inBillDiscount2Percent: amounts.inBillDiscount2Percent,
           inBillDiscount2Amount: amounts.inBillDiscount2Amount,
           cashDiscountPercent: amounts.cashDiscountPercent,
+          cashDiscountAmount: amounts.cashDiscountAmount,
           gstRate: amounts.gstRate,
           amount: amounts.totalAmount,
         });
@@ -1974,6 +2013,7 @@ app.put('/api/purchases/:id', authenticateJWT, async (req: AuthRequest, res) => 
         inBillDiscount2Percent: amounts.inBillDiscount2Percent,
         inBillDiscount2Amount: amounts.inBillDiscount2Amount,
         cashDiscountPercent: amounts.cashDiscountPercent,
+        cashDiscountAmount: amounts.cashDiscountAmount,
         gstRate: amounts.gstRate,
         amount: amounts.totalAmount,
       };
@@ -1993,6 +2033,32 @@ app.put('/api/purchases/:id', authenticateJWT, async (req: AuthRequest, res) => 
         existing.received,
         nextReceived
       ));
+      if (items) {
+        for (const item of items) {
+          if (!item.newProduct || !item.productId) continue;
+          const details = item.newProduct;
+          const product = await tx.product.findUnique({ where: { id: item.productId } });
+          if (!product || product.deletedAt) throw new Error(`Product not found: ${item.productId}`);
+          const minStock = Number(details.minStock ?? product.minStock);
+          await tx.product.update({
+            where: { id: item.productId },
+            data: {
+              name: details.name || product.name,
+              categoryId: details.categoryId || null,
+              categoryName: details.categoryName || '',
+              brand: details.brand || '',
+              color: details.color || '',
+              hsn: item.hsn || product.hsn,
+              purchasePrice: Number(item.purchasePrice ?? product.purchasePrice),
+              sellingPrice: Number(details.sellingPrice ?? product.sellingPrice),
+              gstRate: Number(item.gstRate ?? product.gstRate),
+              minStock,
+              unit: details.unit || product.unit,
+              status: product.stock <= 0 ? 'Out of Stock' : product.stock <= minStock ? 'Low Stock' : 'In Stock',
+            },
+          });
+        }
+      }
 
       return tx.purchase.update({
         where: { id: req.params.id },
@@ -2042,10 +2108,11 @@ app.delete('/api/purchases/:id', authenticateJWT, async (req: AuthRequest, res) 
 
 // ─── Sales ────────────────────────────────────────────────────────────────────
 app.get('/api/sales', authenticateJWT, async (req, res) => {
-  const { business, search, status } = req.query as Record<string, string>;
+  const { business, search, status, gstMode } = req.query as Record<string, string>;
   const where: any = { deletedAt: null };
   if (business) where.business = business.toUpperCase();
   if (status)   where.status   = status;
+  if (gstMode)  where.gstMode  = gstMode;
   if (search)   where.OR = [
     { invoiceNumber: { contains: search } },
     { customerName:  { contains: search } },
@@ -2062,6 +2129,7 @@ app.get('/api/sales', authenticateJWT, async (req, res) => {
       id: i.id,
       productId:    i.productId,
       productName:  i.productName,
+      hsn:          i.hsn || i.product.hsn,
       quantity:     i.quantity,
       sellingPrice: i.sellingPrice,
       discount:     i.discount,
@@ -2073,9 +2141,11 @@ app.get('/api/sales', authenticateJWT, async (req, res) => {
 });
 
 app.post('/api/sales', authenticateJWT, async (req: AuthRequest, res) => {
-  const { invoiceNumber, customerId, customerName, customerPhone, saleDate, paymentMode, status, notes, business, items } = req.body;
+  const { invoiceNumber, customerId, customerName, customerPhone, hsn, saleDate, paymentMode, gstMode, status, notes, business, items } = req.body;
   if (!invoiceNumber || !customerName || !customerPhone || !saleDate || !paymentMode || !Array.isArray(items) || !items.length)
     return res.status(400).json({ error: 'invoiceNumber, customerName, customerPhone, saleDate, paymentMode and items are required' });
+  if (gstMode && !['B2B', 'B2C', 'Without GST'].includes(gstMode))
+    return res.status(400).json({ error: 'gstMode must be B2B, B2C or Without GST' });
   try {
     let subtotal = 0, discountAmount = 0, gstAmount = 0, totalAmount = 0;
     const itemsData = items.map((item: any) => {
@@ -2090,7 +2160,7 @@ app.post('/api/sales', authenticateJWT, async (req: AuthRequest, res) => {
       discountAmount += disc;
       gstAmount      += lineGst;
       totalAmount    += lineTaxable + lineGst;
-      return { productId: item.productId, productName: item.productName ?? '', quantity: qty, sellingPrice: price, discount: disc, gstRate: gst, amount: lineTaxable + lineGst };
+      return { productId: item.productId, productName: item.productName ?? '', hsn: item.hsn ?? '', quantity: qty, sellingPrice: price, discount: disc, gstRate: gst, amount: lineTaxable + lineGst };
     });
     const saleStatus = status || 'Paid';
     const inventoryManaged = true;
@@ -2098,9 +2168,11 @@ app.post('/api/sales', authenticateJWT, async (req: AuthRequest, res) => {
       const created = await tx.sale.create({
         data: {
           invoiceNumber, customerName, customerPhone,
+          hsn: hsn || '',
           customerId: customerId || null,
           saleDate: new Date(saleDate),
           paymentMode,
+          gstMode: gstMode || 'B2C',
           status: saleStatus,
           inventoryManaged,
           subtotal, discountAmount, gstAmount, totalAmount,
@@ -2128,7 +2200,9 @@ app.post('/api/sales', authenticateJWT, async (req: AuthRequest, res) => {
 });
 
 app.put('/api/sales/:id', authenticateJWT, async (req: AuthRequest, res) => {
-  const { customerId, customerName, customerPhone, saleDate, paymentMode, status, notes, items } = req.body;
+  const { customerId, customerName, customerPhone, hsn, saleDate, paymentMode, gstMode, status, notes, items } = req.body;
+  if (gstMode && !['B2B', 'B2C', 'Without GST'].includes(gstMode))
+    return res.status(400).json({ error: 'gstMode must be B2B, B2C or Without GST' });
   try {
     let subtotal = 0, discountAmount = 0, gstAmount = 0, totalAmount = 0;
     const itemsData = items?.map((item: any) => {
@@ -2143,7 +2217,7 @@ app.put('/api/sales/:id', authenticateJWT, async (req: AuthRequest, res) => {
       discountAmount += disc;
       gstAmount      += lineGst;
       totalAmount    += lineTaxable + lineGst;
-      return { productId: item.productId, productName: item.productName ?? '', quantity: qty, sellingPrice: price, discount: disc, gstRate: gst, amount: lineTaxable + lineGst };
+      return { productId: item.productId, productName: item.productName ?? '', hsn: item.hsn ?? '', quantity: qty, sellingPrice: price, discount: disc, gstRate: gst, amount: lineTaxable + lineGst };
     });
     const sale = await prisma.$transaction(async (tx) => {
       const existing = await tx.sale.findUnique({
@@ -2170,7 +2244,7 @@ app.put('/api/sales/:id', authenticateJWT, async (req: AuthRequest, res) => {
         where: { id: req.params.id },
         data: {
           customerId: customerId || null,
-          customerName, customerPhone, paymentMode, status,
+          customerName, customerPhone, hsn, paymentMode, gstMode, status,
           inventoryManaged: shouldManageInventory
             ? true
             : undefined,

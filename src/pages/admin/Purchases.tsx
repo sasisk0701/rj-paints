@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Plus, Pencil, Trash2, Download, Eye } from 'lucide-react';
-import { Form, Input, InputNumber, Select, Switch, message } from 'antd';
+import { AutoComplete, Form, Input, InputNumber, Select, Switch, message } from 'antd';
 import { useBusiness } from '@/hooks/useBusiness.ts';
 import { purchaseService, supplierService, apiProductService, categoryService, type ApiPurchase, type ApiSupplier, type ApiProduct, type ApiCategory } from '@/services/api';
 import { Toolbar, SearchBox } from '@/components/common/Toolbar.tsx';
@@ -11,7 +11,7 @@ import { Badge } from '@/components/common/Badge';
 import { AppModal } from '@/components/common/AppModal';
 import { ConfirmDialog } from '@/components/common/ConfirmDialog';
 import type { KpiItem, TableColumn, Tone } from '@/types/types';
-import { exportPurchasesToExcel } from '@/utils/purchaseExcelExport';
+import { exportPurchasesToPdf } from '@/utils/transactionPdfExport';
 
 const COLUMNS: TableColumn[] = [
   { key: 'po',       label: 'PO #' },
@@ -57,6 +57,26 @@ export default function Purchases() {
   const [deleting, setDeleting]         = useState(false);
   const [form] = Form.useForm();
 
+  const setPurchaseItemProduct = (index: number, product: ApiProduct) => {
+    form.setFieldValue(['items', index, 'productId'], product.id);
+    form.setFieldValue(['items', index, 'productName'], product.name);
+    form.setFieldValue(['items', index, 'purchasePrice'], product.purchasePrice);
+    form.setFieldValue(['items', index, 'gstRate'], product.gstRate);
+    form.setFieldValue(['items', index, 'hsn'], product.hsn ?? '');
+    form.setFieldValue(['items', index, 'volume'], product.unit ?? '');
+    form.setFieldValue(['items', index, 'newProduct'], {
+      name: product.name,
+      categoryId: product.categoryId || '',
+      categoryName: product.categoryName || '',
+      brand: product.brand || '',
+      color: product.color || '',
+      sellingPrice: product.sellingPrice ?? 0,
+      unit: product.unit || '',
+      minStock: product.minStock ?? 0,
+      openingStock: 0,
+    });
+  };
+
   const fetchAll = useCallback(async () => {
     setLoading(true);
     try {
@@ -88,13 +108,15 @@ export default function Purchases() {
       purchaseDate: new Date().toISOString().split('T')[0],
       paymentMode: 'Bank Transfer',
       status: 'Pending',
-      received: false,
+      received: true,
       business: toggle.toUpperCase(),
       items: [{
-        productId: '', quantity: 1, packs: 0, volume: '', purchasePrice: 0,
-        inBillDiscountPercent: 0, inBillDiscountAmount: 0,
-        inBillDiscount2Percent: 0, inBillDiscount2Amount: 0,
-        cashDiscountPercent: 0, gstRate: 18, hsn: '',
+        productId: '', productName: '', quantity: 1, packs: 0, volume: '', purchasePrice: 0,
+        newProduct: { sellingPrice: 0, openingStock: 0, minStock: 0 },
+        inBillDiscountValue: 0, inBillDiscountType: 'amount',
+        rebateDiscountValue: 0, rebateDiscountType: 'amount',
+        cardDiscountValue: 0, cardDiscountType: 'amount',
+        gstRate: 18, hsn: '',
       }],
     });
     setModalOpen(true);
@@ -113,24 +135,42 @@ export default function Purchases() {
       received: p.received,
       notes: p.notes ?? '',
       business: p.business,
-      items: p.items?.map((i) => ({
-        productId: i.productId,
-        quantity: i.quantity,
-        packs: i.packs ?? 0,
-        volume: i.volume || products.find((product) => product.id === i.productId)?.unit || '',
-        purchasePrice: i.purchasePrice,
-        inBillDiscountPercent: i.inBillDiscountPercent ?? 0,
-        inBillDiscountAmount: i.inBillDiscountAmount ?? 0,
-        inBillDiscount2Percent: i.inBillDiscount2Percent ?? 0,
-        inBillDiscount2Amount: i.inBillDiscount2Amount ?? 0,
-        cashDiscountPercent: i.cashDiscountPercent ?? 0,
-        gstRate: i.gstRate,
-        hsn: i.hsn || products.find((product) => product.id === i.productId)?.hsn || '',
-      })) ?? [{
+      items: p.items?.map((i) => {
+        const product = products.find((entry) => entry.id === i.productId);
+        return {
+          productId: i.productId,
+          productName: i.productName,
+          quantity: i.quantity,
+          packs: i.packs ?? 0,
+          volume: i.volume || product?.unit || '',
+          purchasePrice: i.purchasePrice,
+          newProduct: {
+            name: i.productName,
+            categoryId: product?.categoryId || '',
+            categoryName: product?.categoryName || '',
+            brand: product?.brand || '',
+            color: product?.color || '',
+            sellingPrice: product?.sellingPrice ?? 0,
+            unit: product?.unit || '',
+            minStock: product?.minStock ?? 0,
+            openingStock: 0,
+          },
+          inBillDiscountType: (i.inBillDiscountPercent ?? 0) > 0 ? 'percent' : 'amount',
+          inBillDiscountValue: (i.inBillDiscountPercent ?? 0) > 0 ? i.inBillDiscountPercent : i.inBillDiscountAmount ?? 0,
+          rebateDiscountType: (i.inBillDiscount2Percent ?? 0) > 0 ? 'percent' : 'amount',
+          rebateDiscountValue: (i.inBillDiscount2Percent ?? 0) > 0 ? i.inBillDiscount2Percent : i.inBillDiscount2Amount ?? 0,
+          cardDiscountType: (i.cashDiscountPercent ?? 0) > 0 ? 'percent' : 'amount',
+          cardDiscountValue: (i.cashDiscountPercent ?? 0) > 0 ? i.cashDiscountPercent : i.cashDiscountAmount ?? 0,
+          gstRate: i.gstRate,
+          hsn: i.hsn || product?.hsn || '',
+        };
+      }) ?? [{
         productId: '', quantity: 1, packs: 0, volume: '', purchasePrice: 0,
-        inBillDiscountPercent: 0, inBillDiscountAmount: 0,
-        inBillDiscount2Percent: 0, inBillDiscount2Amount: 0,
-        cashDiscountPercent: 0, gstRate: 18,
+        newProduct: { sellingPrice: 0, openingStock: 0, minStock: 0 },
+        inBillDiscountValue: 0, inBillDiscountType: 'amount',
+        rebateDiscountValue: 0, rebateDiscountType: 'amount',
+        cardDiscountValue: 0, cardDiscountType: 'amount',
+        gstRate: 18,
       }],
     });
     setModalOpen(true);
@@ -146,6 +186,12 @@ export default function Purchases() {
         items: values.items.map((item: any) => {
           const prod = products.find((p) => p.id === item.productId);
           const category = categories.find((c) => c.id === item.newProduct?.categoryId);
+          const inBillDiscountPercent = item.inBillDiscountType === 'percent' ? Number(item.inBillDiscountValue ?? 0) : 0;
+          const inBillDiscountAmount = item.inBillDiscountType === 'amount' ? Number(item.inBillDiscountValue ?? 0) : 0;
+          const inBillDiscount2Percent = item.rebateDiscountType === 'percent' ? Number(item.rebateDiscountValue ?? 0) : 0;
+          const inBillDiscount2Amount = item.rebateDiscountType === 'amount' ? Number(item.rebateDiscountValue ?? 0) : 0;
+          const cashDiscountPercent = item.cardDiscountType === 'percent' ? Number(item.cardDiscountValue ?? 0) : 0;
+          const cashDiscountAmount = item.cardDiscountType === 'amount' ? Number(item.cardDiscountValue ?? 0) : 0;
           return {
             productId: item.productId === NEW_PRODUCT_VALUE ? undefined : item.productId,
             productName: prod?.name ?? item.newProduct?.name ?? '',
@@ -153,18 +199,32 @@ export default function Purchases() {
             packs: Number(item.packs ?? 0),
             volume: item.volume || prod?.unit || item.newProduct?.unit || '',
             purchasePrice: Number(item.purchasePrice),
-            inBillDiscountPercent: Number(item.inBillDiscountPercent ?? 0),
-            inBillDiscountAmount: Number(item.inBillDiscountAmount ?? 0),
-            inBillDiscount2Percent: Number(item.inBillDiscount2Percent ?? 0),
-            inBillDiscount2Amount: Number(item.inBillDiscount2Amount ?? 0),
-            cashDiscountPercent: Number(item.cashDiscountPercent ?? 0),
+            inBillDiscountPercent,
+            inBillDiscountAmount,
+            inBillDiscount2Percent,
+            inBillDiscount2Amount,
+            cashDiscountPercent,
+            cashDiscountAmount,
             gstRate: Number(item.gstRate ?? 18),
             hsn: item.hsn || item.newProduct?.hsn || prod?.hsn || '',
-            amount: Number(item.quantity) * Number(item.purchasePrice) * (1 - Number(item.cashDiscountPercent ?? 0) / 100),
-            ...(item.productId === NEW_PRODUCT_VALUE ? {
+            amount: (() => {
+              const value = Number(item.quantity) * Number(item.purchasePrice);
+              const afterInBill = value - value * inBillDiscountPercent / 100 - inBillDiscountAmount;
+              const afterRebate = afterInBill - afterInBill * inBillDiscount2Percent / 100 - inBillDiscount2Amount;
+              const taxable = afterRebate - afterRebate * cashDiscountPercent / 100 - cashDiscountAmount;
+              return taxable * (1 + Number(item.gstRate ?? 18) / 100);
+            })(),
+            ...(item.newProduct ? {
               newProduct: {
                 ...item.newProduct,
-                categoryName: category?.name ?? '',
+                name: item.newProduct.name || item.productName,
+                categoryName: category?.name ?? item.newProduct.categoryName ?? '',
+                brand: item.newProduct.brand || prod?.brand || '',
+                color: item.newProduct.color || prod?.color || '',
+                sellingPrice: Number(item.newProduct.sellingPrice ?? prod?.sellingPrice ?? 0),
+                unit: item.newProduct.unit || prod?.unit || item.volume || '',
+                minStock: Number(item.newProduct.minStock ?? prod?.minStock ?? 0),
+                openingStock: Number(item.newProduct.openingStock ?? 0),
               },
             } : {}),
           };
@@ -222,11 +282,11 @@ export default function Purchases() {
     }
     try {
       setExporting(true);
-      await exportPurchasesToExcel(exportPurchases, suppliers, products, toggle);
-      message.success('Purchase workbook exported');
+      exportPurchasesToPdf(exportPurchases, suppliers, products, toggle);
+      message.success('Purchase records exported to PDF');
     } catch (error) {
       console.error('Failed to export purchases:', error);
-      message.error('Failed to export purchase workbook');
+      message.error('Failed to export purchase PDF');
     } finally {
       setExporting(false);
     }
@@ -291,7 +351,7 @@ export default function Purchases() {
         right={
           <>
             <Button variant="ghost" size="sm" icon={Download} onClick={handleExport} disabled={exporting}>
-              {exporting ? 'Exporting…' : 'Export'}
+              {exporting ? 'Exporting…' : 'Export PDF'}
             </Button>
             <Button variant="primary" size="sm" icon={Plus} onClick={openAdd}>New Purchase</Button>
           </>
@@ -375,57 +435,80 @@ export default function Purchases() {
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-bold uppercase tracking-widest text-ink-3">Items</span>
                   <Button type="button" variant="ghost" size="sm" icon={Plus} onClick={() => add({
-                    productId: '', quantity: 1, packs: 0, volume: '', purchasePrice: 0,
-                    inBillDiscountPercent: 0, inBillDiscountAmount: 0,
-                    inBillDiscount2Percent: 0, inBillDiscount2Amount: 0,
-                    cashDiscountPercent: 0, gstRate: 18, hsn: '',
+                    productId: '', productName: '', quantity: 1, packs: 0, volume: '', purchasePrice: 0,
+                    newProduct: { sellingPrice: 0, openingStock: 0, minStock: 0 },
+                    inBillDiscountValue: 0, inBillDiscountType: 'amount',
+                    rebateDiscountValue: 0, rebateDiscountType: 'amount',
+                    cardDiscountValue: 0, cardDiscountType: 'amount',
+                    gstRate: 18, hsn: '',
                   })}>
                     Add Item
                   </Button>
                 </div>
                 {fields.map((field) => (
                   <div key={field.key} className="grid grid-cols-12 gap-3 items-end rounded-2xl border border-border bg-surface-2 p-4">
-                    <Form.Item name={[field.name, 'productId']} label="Product" rules={[{ required: true, message: 'Required' }]} className="col-span-12 md:col-span-3">
-                      <Select
-                        placeholder="Choose product" showSearch optionFilterProp="label"
-                        options={[
-                          ...(!editing ? [{ label: '+ Add new product to catalog', value: NEW_PRODUCT_VALUE }] : []),
-                          ...products.map((p) => ({ label: p.name, value: p.id })),
-                        ]}
-                        onChange={(val) => {
-                          const prod = products.find((p) => p.id === val);
-                          if (prod) {
-                            const items = form.getFieldValue('items');
-                            items[field.name].purchasePrice = prod.purchasePrice;
-                            items[field.name].gstRate = prod.gstRate;
-                            items[field.name].hsn = prod.hsn ?? '';
-                            items[field.name].volume = prod.unit ?? '';
-                            form.setFieldValue('items', [...items]);
-                          } else if (val === NEW_PRODUCT_VALUE) {
+                    <Form.Item name={[field.name, 'productId']} hidden>
+                      <Input />
+                    </Form.Item>
+                    <Form.Item name={[field.name, 'productName']} label="Product" rules={[{ required: true, message: 'Choose or enter a product' }]} className="col-span-12 md:col-span-3">
+                      <AutoComplete
+                        placeholder="Choose from list or type product name"
+                        options={products.map((product) => ({
+                          value: product.name,
+                          label: product.sku ? `${product.name} · ${product.sku}` : product.name,
+                        }))}
+                        filterOption={(input, option) => String(option?.value ?? '').toLowerCase().includes(input.toLowerCase())}
+                        onChange={(name) => {
+                          const product = products.find((entry) => entry.name === name);
+                          if (product) {
+                            setPurchaseItemProduct(field.name, product);
+                          } else if (name.trim()) {
+                            form.setFieldValue(['items', field.name, 'productId'], NEW_PRODUCT_VALUE);
+                            const current = form.getFieldValue(['items', field.name, 'newProduct']) ?? {};
                             form.setFieldValue(['items', field.name, 'newProduct'], {
-                              name: '',
-                              categoryId: undefined,
-                              brand: '',
-                              color: '',
-                              sellingPrice: undefined,
-                              unit: '',
+                              sellingPrice: 0,
+                              openingStock: 0,
                               minStock: 0,
-                              description: '',
+                              ...current,
+                              name,
                             });
+                          } else {
+                            form.setFieldValue(['items', field.name, 'productId'], '');
                           }
+                        }}
+                        onSelect={(name) => {
+                          const product = products.find((entry) => entry.name === name);
+                          if (product) setPurchaseItemProduct(field.name, product);
                         }}
                       />
                     </Form.Item>
-                    <Form.Item noStyle shouldUpdate={(previous, current) =>
-                      previous.items?.[field.name]?.productId !== current.items?.[field.name]?.productId
-                    }>
-                      {({ getFieldValue }) => getFieldValue(['items', field.name, 'productId']) === NEW_PRODUCT_VALUE ? (
-                        <div className="col-span-12 grid grid-cols-1 md:grid-cols-2 gap-x-4 rounded-xl border border-border bg-white p-3">
-                          <Form.Item name={[field.name, 'newProduct', 'name']} label="Product Name" rules={[{ required: true, message: 'Required' }]}>
-                            <Input placeholder="Product name" />
+                    <div className="col-span-12 grid grid-cols-1 md:grid-cols-2 gap-x-4 rounded-xl border border-border bg-white p-3">
+                          <Form.Item name={[field.name, 'newProduct', 'categoryId']} hidden>
+                            <Input />
                           </Form.Item>
-                          <Form.Item name={[field.name, 'newProduct', 'categoryId']} label="Category" rules={[{ required: true, message: 'Required' }]}>
-                            <Select placeholder="Select category" options={categories.map((category) => ({ label: category.name, value: category.id }))} />
+                          <Form.Item
+                            name={[field.name, 'newProduct', 'categoryName']}
+                            label="Category"
+                          >
+                            <AutoComplete
+                              placeholder="Select category or type a new one"
+                              options={categories.map((category) => ({ value: category.name }))}
+                              filterOption={(input, option) => String(option?.value ?? '').toLowerCase().includes(input.toLowerCase())}
+                              onChange={(name) => {
+                                const category = categories.find((entry) => entry.name === name);
+                                form.setFieldValue(
+                                  ['items', field.name, 'newProduct', 'categoryId'],
+                                  category?.id ?? '',
+                                );
+                              }}
+                              onSelect={(name) => {
+                                const category = categories.find((entry) => entry.name === name);
+                                form.setFieldValue(
+                                  ['items', field.name, 'newProduct', 'categoryId'],
+                                  category?.id ?? '',
+                                );
+                              }}
+                            />
                           </Form.Item>
                           <Form.Item name={[field.name, 'newProduct', 'brand']} label="Brand" rules={[{ required: true, message: 'Required' }]}>
                             <Input placeholder="Brand" />
@@ -442,12 +525,13 @@ export default function Purchases() {
                           <Form.Item name={[field.name, 'newProduct', 'minStock']} label="Min Stock Alert">
                             <InputNumber min={0} className="w-full" />
                           </Form.Item>
+                          <Form.Item name={[field.name, 'newProduct', 'openingStock']} label="Opening Stock (optional)">
+                            <InputNumber min={0} className="w-full" />
+                          </Form.Item>
                           <Form.Item name={[field.name, 'newProduct', 'description']} label="Description (optional)">
                             <Input placeholder="Short product description" />
                           </Form.Item>
-                        </div>
-                      ) : null}
-                    </Form.Item>
+                    </div>
                     <Form.Item name={[field.name, 'hsn']} label="HSN Code" className="col-span-6 md:col-span-2">
                       <Input placeholder="HSN code" />
                     </Form.Item>
@@ -460,23 +544,53 @@ export default function Purchases() {
                     <Form.Item name={[field.name, 'volume']} label="Volume (kg/lt/M)" className="col-span-6 md:col-span-3">
                       <Input placeholder="e.g. 20 lt, 5 kg, 1 M" />
                     </Form.Item>
-                    <Form.Item name={[field.name, 'purchasePrice']} label="Price (₹)" rules={[{ required: true }]} className="col-span-4 md:col-span-2">
+                    <Form.Item name={[field.name, 'purchasePrice']} label="Purchase Price (₹)" rules={[{ required: true }]} className="col-span-4 md:col-span-2">
                       <InputNumber min={0} className="w-full" />
                     </Form.Item>
-                    <Form.Item name={[field.name, 'inBillDiscountPercent']} label="In-Bill Disc (%)" className="col-span-3 md:col-span-2">
-                      <InputNumber min={0} max={100} className="w-full" />
+                    <Form.Item name={[field.name, 'inBillDiscountValue']} label="In-Bill Disc" className="col-span-6 md:col-span-2">
+                      <InputNumber
+                        min={0}
+                        className="w-full"
+                        addonAfter={
+                          <Form.Item name={[field.name, 'inBillDiscountType']} noStyle>
+                            <Select
+                              aria-label="In-Bill discount unit"
+                              options={[{ label: '₹', value: 'amount' }, { label: '%', value: 'percent' }]}
+                              style={{ width: 62 }}
+                            />
+                          </Form.Item>
+                        }
+                      />
                     </Form.Item>
-                    <Form.Item name={[field.name, 'inBillDiscountAmount']} label="In-Bill Disc (₹)" className="col-span-3 md:col-span-2">
-                      <InputNumber min={0} className="w-full" />
+                    <Form.Item name={[field.name, 'rebateDiscountValue']} label="Rebate Disc" className="col-span-6 md:col-span-2">
+                      <InputNumber
+                        min={0}
+                        className="w-full"
+                        addonAfter={
+                          <Form.Item name={[field.name, 'rebateDiscountType']} noStyle>
+                            <Select
+                              aria-label="Rebate discount unit"
+                              options={[{ label: '₹', value: 'amount' }, { label: '%', value: 'percent' }]}
+                              style={{ width: 62 }}
+                            />
+                          </Form.Item>
+                        }
+                      />
                     </Form.Item>
-                    <Form.Item name={[field.name, 'inBillDiscount2Percent']} label="In-Bill Disc 2 (%)" className="col-span-3 md:col-span-2">
-                      <InputNumber min={0} max={100} className="w-full" />
-                    </Form.Item>
-                    <Form.Item name={[field.name, 'inBillDiscount2Amount']} label="In-Bill Disc 2 (₹)" className="col-span-3 md:col-span-2">
-                      <InputNumber min={0} className="w-full" />
-                    </Form.Item>
-                    <Form.Item name={[field.name, 'cashDiscountPercent']} label="Cash Disc %" className="col-span-3 md:col-span-2">
-                      <InputNumber min={0} max={100} className="w-full" />
+                    <Form.Item name={[field.name, 'cardDiscountValue']} label="Card Disc" className="col-span-6 md:col-span-2">
+                      <InputNumber
+                        min={0}
+                        className="w-full"
+                        addonAfter={
+                          <Form.Item name={[field.name, 'cardDiscountType']} noStyle>
+                            <Select
+                              aria-label="Card discount unit"
+                              options={[{ label: '₹', value: 'amount' }, { label: '%', value: 'percent' }]}
+                              style={{ width: 62 }}
+                            />
+                          </Form.Item>
+                        }
+                      />
                     </Form.Item>
                     <Form.Item name={[field.name, 'gstRate']} label="GST %" className="col-span-3 md:col-span-1">
                       <InputNumber min={0} max={28} className="w-full" />

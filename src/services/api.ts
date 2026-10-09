@@ -417,18 +417,19 @@ export interface ApiPurchaseItem {
   quantity: number; packs: number; volume: string; purchasePrice: number;
   inBillDiscountPercent: number; inBillDiscountAmount: number;
   inBillDiscount2Percent: number; inBillDiscount2Amount: number;
-  cashDiscountPercent: number; gstRate: number; amount: number;
+  cashDiscountPercent: number; cashDiscountAmount: number; gstRate: number; amount: number;
 }
 export interface NewPurchaseProduct {
   name: string;
-  categoryId: string;
-  categoryName: string;
+  categoryId?: string;
+  categoryName?: string;
   brand: string;
   color?: string;
   hsn?: string;
-  sellingPrice: number;
+  sellingPrice?: number;
   unit: string;
   minStock?: number;
+  openingStock?: number;
   description?: string;
 }
 export const purchaseService = {
@@ -453,16 +454,18 @@ export const purchaseService = {
 export interface ApiSale {
   id: string; invoiceNumber: string; customerName: string; customerPhone: string;
   customerId?: string | null; saleDate: string; paymentMode: string; status: string;
+  hsn: string;
+  gstMode: 'B2B' | 'B2C' | 'Without GST';
   subtotal: number; discountAmount: number; gstAmount: number; totalAmount: number;
   notes?: string | null; business: string; createdAt: string;
   items?: ApiSaleItem[];
 }
 export interface ApiSaleItem {
   id: string; productId: string; productName: string;
-  quantity: number; sellingPrice: number; discount: number; gstRate: number; amount: number;
+  hsn: string; quantity: number; sellingPrice: number; discount: number; gstRate: number; amount: number;
 }
 export const saleService = {
-  getAll: async (filters?: { business?: string; search?: string; status?: string }): Promise<ApiSale[]> => {
+  getAll: async (filters?: { business?: string; search?: string; status?: string; gstMode?: ApiSale['gstMode'] }): Promise<ApiSale[]> => {
     const { data } = await axiosClient.get('/api/sales', { params: filters || {} });
     return data;
   },
