@@ -390,9 +390,10 @@ function renderPurchaseInvoicePage(
   const supplierAddress = [supplier?.address, supplier?.city].filter(Boolean).join(', ');
   text(48, 691, 'BILL TO PARTY', 10, true);
   text(48, 674, supplier?.name ?? purchase.supplierName, 11, true);
-  text(48, 657, `Address: ${supplierAddress || '-'}`, 9);
-  text(48, 640, `Phone: ${supplier?.phone || '-'}`, 9);
-  if (supplier?.gstNumber) text(48, 623, `GSTIN: ${supplier.gstNumber}`, 9);
+  text(48, 657, `Supplier Name: ${purchase.supplierContactName || '-'}`, 9);
+  text(48, 640, `Address: ${supplierAddress || '-'}`, 9);
+  text(48, 623, `Phone: ${supplier?.phone || '-'}`, 9);
+  if (supplier?.gstNumber) text(48, 606, `GSTIN: ${supplier.gstNumber}`, 9);
 
   text(625, 691, 'SHIP TO PARTY', 10, true);
   text(625, 674, businessName, 11, true);
@@ -574,6 +575,6 @@ export function exportPurchasesToPdf(
     pageContents,
     PURCHASE_PAGE_WIDTH,
     PURCHASE_PAGE_HEIGHT,
-    `purchase-orders-${business}-${new Date().toISOString().slice(0, 10)}`
+    `purchase-orders-${business}-${new Date().toISOString().replace(/[:.]/g, '-')}`
   );
 }

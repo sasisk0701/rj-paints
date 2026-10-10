@@ -674,10 +674,22 @@ app.get('/api/products', authenticateJWT, async (req, res) => {
     include: {
       category: { select: { id: true, name: true } },
       purchaseItems: {
+        orderBy: { purchase: { purchaseDate: 'desc' } },
         select: {
           amount: true,
           quantity: true,
-          purchase: { select: { poNumber: true, supplierName: true, createdAt: true, deletedAt: true } },
+          purchase: {
+            select: {
+              poNumber: true,
+              supplierName: true,
+              supplierContactName: true,
+              purchaseDate: true,
+              paymentMode: true,
+              status: true,
+              createdAt: true,
+              deletedAt: true,
+            },
+          },
         },
       },
     },
@@ -687,8 +699,21 @@ app.get('/api/products', authenticateJWT, async (req, res) => {
     const latestPurchase = purchaseItems
       .filter((item) => !item.purchase.deletedAt)
       .sort((a, b) => b.purchase.createdAt.getTime() - a.purchase.createdAt.getTime())[0];
+    const purchaseHistory = purchaseItems
+      .filter((item) => !item.purchase.deletedAt)
+      .map((item) => ({
+        poNumber: item.purchase.poNumber,
+        supplierName: item.purchase.supplierName,
+        supplierContactName: item.purchase.supplierContactName,
+        purchaseDate: item.purchase.purchaseDate,
+        paymentMode: item.purchase.paymentMode,
+        status: item.purchase.status,
+        quantity: item.quantity,
+        amount: item.amount,
+      }));
     return {
       ...product,
+      purchaseHistory,
       latestPurchase: latestPurchase ? {
         poNumber: latestPurchase.purchase.poNumber,
         supplierName: latestPurchase.purchase.supplierName,
@@ -886,6 +911,7 @@ app.get('/api/suppliers', authenticateJWT, async (req, res) => {
   if (business) where.business = business.toUpperCase();
   if (search) where.OR = [
     { name:  { contains: search } },
+    { contactName: { contains: search } },
     { phone: { contains: search } },
     { city:  { contains: search } },
     { gstNumber: { contains: search } },
@@ -904,14 +930,14 @@ app.get('/api/suppliers/:id', authenticateJWT, async (req, res) => {
 });
 
 app.post('/api/suppliers', authenticateJWT, async (req: AuthRequest, res) => {
-  const { name, gstNumber, phone, email, address, city, business, outstandingBalance, notes } = req.body;
+  const { name, contactName, gstNumber, phone, email, address, city, business, outstandingBalance, notes } = req.body;
   if (!name || !gstNumber || !phone || !city)
     return res.status(400).json({ error: 'name, gstNumber, phone and city are required' });
   const exists = await prisma.supplier.findFirst({ where: { gstNumber } });
   if (exists) return res.status(409).json({ error: 'GST number already registered' });
   const supplier = await prisma.supplier.create({
     data: {
-      name, gstNumber, phone, email, address, city,
+      name, contactName: contactName || null, gstNumber, phone, email, address, city,
       business: (business || 'PAINTS').toUpperCase() as any,
       outstandingBalance: +(outstandingBalance || 0),
       notes,
@@ -924,11 +950,11 @@ app.post('/api/suppliers', authenticateJWT, async (req: AuthRequest, res) => {
 });
 
 app.put('/api/suppliers/:id', authenticateJWT, async (req: AuthRequest, res) => {
-  const { name, gstNumber, phone, email, address, city, business, outstandingBalance, notes } = req.body;
+  const { name, contactName, gstNumber, phone, email, address, city, business, outstandingBalance, notes } = req.body;
   const supplier = await prisma.supplier.update({
     where: { id: req.params.id },
     data: {
-      name, gstNumber, phone, email, address, city,
+      name, contactName: contactName || null, gstNumber, phone, email, address, city,
       business: business ? business.toUpperCase() as any : undefined,
       outstandingBalance: outstandingBalance !== undefined ? +outstandingBalance : undefined,
       notes,
@@ -1853,7 +1879,7 @@ app.get('/api/purchases', authenticateJWT, async (req, res) => {
 });
 
 app.post('/api/purchases', authenticateJWT, async (req: AuthRequest, res) => {
-  const { poNumber, supplierId, supplierName, purchaseDate, paymentMode, hsn, status, received, notes, business, items } = req.body;
+  const { poNumber, supplierId, supplierName, supplierContactName, purchaseDate, paymentMode, hsn, status, received, notes, business, items } = req.body;
   if (!poNumber || !supplierName || !purchaseDate || !paymentMode || !Array.isArray(items) || !items.length)
     return res.status(400).json({ error: 'poNumber, supplierName, purchaseDate, paymentMode and items are required' });
   try {
@@ -1962,6 +1988,7 @@ app.post('/api/purchases', authenticateJWT, async (req: AuthRequest, res) => {
         data: {
           poNumber, supplierName,
           supplierId: supplierId || null,
+          supplierContactName: supplierContactName || null,
           purchaseDate: new Date(purchaseDate),
           paymentMode,
           hsn: hsn || '',
@@ -1992,7 +2019,7 @@ app.post('/api/purchases', authenticateJWT, async (req: AuthRequest, res) => {
 });
 
 app.put('/api/purchases/:id', authenticateJWT, async (req: AuthRequest, res) => {
-  const { supplierId, supplierName, purchaseDate, paymentMode, hsn, status, received, notes, items } = req.body;
+  const { supplierId, supplierName, supplierContactName, purchaseDate, paymentMode, hsn, status, received, notes, items } = req.body;
   try {
     let subtotal = 0, gstAmount = 0, totalAmount = 0;
     const itemsData = items?.map((item: any) => {
@@ -2063,8 +2090,9 @@ app.put('/api/purchases/:id', authenticateJWT, async (req: AuthRequest, res) => 
       return tx.purchase.update({
         where: { id: req.params.id },
         data: {
-          supplierId: supplierId || null,
+          supplier: supplierId ? { connect: { id: supplierId } } : { disconnect: true },
           supplierName, paymentMode, status,
+          supplierContactName: supplierContactName || null,
           hsn: hsn ?? undefined,
           received: received ?? undefined,
           purchaseDate: purchaseDate ? new Date(purchaseDate) : undefined,

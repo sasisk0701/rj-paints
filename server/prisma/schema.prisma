@@ -76,6 +76,7 @@ model Category {
 model Supplier {
   id                 String        @id @default(uuid())
   name               String
+  contactName        String?
   gstNumber          String        @unique
   phone              String
   email              String?
@@ -98,6 +99,7 @@ model StockInRecord {
   supplierId   String?
   supplier     Supplier?     @relation(fields: [supplierId], references: [id])
   supplierName String
+  supplierContactName String?
   purchaseDate DateTime
   subtotal     Float
   totalGst     Float
@@ -184,6 +186,7 @@ model Purchase {
   supplierId   String?
   supplier     Supplier?     @relation(fields: [supplierId], references: [id])
   supplierName String
+  supplierContactName String?
   purchaseDate DateTime
   paymentMode  String
   hsn          String        @default("")

@@ -63,7 +63,7 @@ export default function Suppliers() {
   const openEdit = (s: ApiSupplier) => {
     setEditing(s);
     form.setFieldsValue({
-      name: s.name, gstNumber: s.gstNumber, phone: s.phone,
+      name: s.name, contactName: s.contactName ?? '', gstNumber: s.gstNumber, phone: s.phone,
       email: s.email ?? '', address: s.address ?? '', city: s.city,
       business: s.business, outstandingBalance: s.outstandingBalance,
       notes: s.notes ?? '',
@@ -110,9 +110,9 @@ export default function Suppliers() {
 
   const handleExport = () => {
     if (!suppliers.length) { message.warning('No suppliers to export'); return; }
-    const header = 'Name,Phone,Email,City,GST Number,Outstanding,Business\n';
+    const header = 'Supplier,Supplier Name,Phone,Email,City,GST Number,Outstanding,Business\n';
     const csv = suppliers.map((s) =>
-      `"${s.name}","${s.phone}","${s.email ?? ''}","${s.city}","${s.gstNumber}",${s.outstandingBalance},"${s.business}"`
+      `"${s.name}","${s.contactName ?? ''}","${s.phone}","${s.email ?? ''}","${s.city}","${s.gstNumber}",${s.outstandingBalance},"${s.business}"`
     ).join('\n');
     const blob = new Blob([header + csv], { type: 'text/csv' });
     const url  = URL.createObjectURL(blob);
@@ -143,7 +143,7 @@ export default function Suppliers() {
         <CellItem
           icon={<Avatar initials={initials(s.name)} bg="#C4762E" size={30} />}
           name={s.name}
-          sub={s.email ?? undefined}
+          sub={[s.contactName, s.email].filter(Boolean).join(' · ') || undefined}
         />
       ),
       phone:       s.phone,
@@ -215,8 +215,12 @@ export default function Suppliers() {
       >
         <Form form={form} layout="vertical">
           <div className="grid grid-cols-2 gap-x-4">
-            <Form.Item name="name" label="Supplier Name" rules={[{ required: true, message: 'Required' }]} className="col-span-2">
-              <Input placeholder="Asian Paints Depot - Madurai" />
+            <Form.Item name="name" label="Supplier" rules={[{ required: true, message: 'Required' }]} className="col-span-2">
+              <Input placeholder="Asian Paints" />
+            </Form.Item>
+
+            <Form.Item name="contactName" label="Supplier Name">
+              <Input placeholder="Anbu" />
             </Form.Item>
 
             <Form.Item name="gstNumber" label="GST Number" rules={[{ required: true, message: 'Required' }]}>

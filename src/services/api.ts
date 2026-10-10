@@ -125,6 +125,16 @@ export interface ApiProduct {
   stock: number; minStock: number; unit: string; image: string | null;
   business: string; status: string; createdAt: string; updatedAt: string;
   category?: { id: string; name: string } | null;
+  purchaseHistory?: {
+    poNumber: string;
+    supplierName: string;
+    supplierContactName: string | null;
+    purchaseDate: string;
+    paymentMode: string;
+    status: string;
+    quantity: number;
+    amount: number;
+  }[];
 }
 const fileToBase64 = (file: File): Promise<string> => new Promise((resolve, reject) => {
   const reader = new FileReader();
@@ -228,6 +238,7 @@ export const productService = {
 // ─── Suppliers (API-backed) ───────────────────────────────────────────────
 export interface ApiSupplier {
   id: string; name: string; gstNumber: string; phone: string;
+  contactName: string | null;
   email: string | null; address: string | null; city: string;
   business: string; outstandingBalance: number; notes: string | null;
   createdAt: string; updatedAt: string;
@@ -406,6 +417,7 @@ export const inventoryService = {
 // ─── Purchases (API-backed) ─────────────────────────────────────────────────
 export interface ApiPurchase {
   id: string; poNumber: string; supplierName: string; supplierId?: string | null;
+  supplierContactName?: string | null;
   purchaseDate: string; paymentMode: string; hsn: string; status: string;
   received: boolean;
   subtotal: number; gstAmount: number; totalAmount: number;

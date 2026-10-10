@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo, useCallback } from 'react';
-import { Plus, Download, Pencil, Trash2, ImagePlus, X } from 'lucide-react';
+import { Plus, Download, Pencil, Trash2, ImagePlus, X, Eye } from 'lucide-react';
 import { Form, Input, Select, InputNumber, message } from 'antd';
 import { useBusiness } from '@/hooks/useBusiness.ts';
 import { apiProductService, categoryService, resolveAssetUrl, ApiProduct, ApiCategory } from '@/services/api';
@@ -56,6 +56,7 @@ export default function Products() {
   const [statusFilter, setStatusFilter] = useState('');
   const [modalOpen, setModalOpen]       = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<ApiProduct | null>(null);
+  const [purchaseHistoryProduct, setPurchaseHistoryProduct] = useState<ApiProduct | null>(null);
   const [editing, setEditing]           = useState<ApiProduct | null>(null);
   const [saving, setSaving]             = useState(false);
   const [deleting, setDeleting]         = useState(false);
@@ -266,6 +267,7 @@ export default function Products() {
       status:  <Badge tone={STATUS_TONE[p.status] ?? 'neutral'}>{p.status}</Badge>,
       actions: (
         <div className="flex gap-1">
+          <Button variant="ghost" size="sm" icon={Eye} onClick={() => setPurchaseHistoryProduct(p)}>Purchases</Button>
           <Button variant="ghost" size="sm" icon={Pencil} onClick={() => openEdit(p)}>Edit</Button>
           <Button variant="dangerGhost" size="sm" icon={Trash2} onClick={() => setDeleteTarget(p)} />
         </div>
@@ -322,6 +324,49 @@ export default function Products() {
           paginationText={`Showing ${products.length} product${products.length !== 1 ? 's' : ''}`}
         />
       )}
+
+      <AppModal
+        open={!!purchaseHistoryProduct}
+        title={`Purchase History — ${purchaseHistoryProduct?.name ?? ''}`}
+        subtitle="All purchases recorded for this product"
+        onClose={() => setPurchaseHistoryProduct(null)}
+        onConfirm={() => setPurchaseHistoryProduct(null)}
+        confirmText="Close"
+        width={760}
+      >
+        {purchaseHistoryProduct?.purchaseHistory?.length ? (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm border-collapse">
+              <thead>
+                <tr className="bg-surface-2">
+                  {['PO Number', 'Date', 'Supplier', 'Qty', 'Amount', 'Payment', 'Status'].map((heading) => (
+                    <th key={heading} className="text-left text-xs font-bold text-ink-3 px-3 py-2 border-b border-border">
+                      {heading}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {purchaseHistoryProduct.purchaseHistory.map((purchase, index) => (
+                  <tr key={`${purchase.poNumber}-${index}`} className="border-b border-border">
+                    <td className="px-3 py-2 font-mono">{purchase.poNumber}</td>
+                    <td className="px-3 py-2">{new Date(purchase.purchaseDate).toLocaleDateString('en-IN')}</td>
+                    <td className="px-3 py-2">
+                      {[purchase.supplierName, purchase.supplierContactName].filter(Boolean).join(' · ')}
+                    </td>
+                    <td className="px-3 py-2">{purchase.quantity}</td>
+                    <td className="px-3 py-2">₹{purchase.amount.toLocaleString('en-IN')}</td>
+                    <td className="px-3 py-2">{purchase.paymentMode}</td>
+                    <td className="px-3 py-2">{purchase.status}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <p className="py-8 text-center text-sm text-ink-3">No purchases recorded for this product.</p>
+        )}
+      </AppModal>
 
       <AppModal
         open={modalOpen}

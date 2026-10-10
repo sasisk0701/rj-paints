@@ -218,7 +218,10 @@ export default function StockIn() {
                 allowClear
                 placeholder="Select or type supplier name"
                 optionFilterProp="label"
-                options={suppliers.map((s) => ({ label: s.name, value: s.name }))}
+                options={suppliers.map((s) => ({
+                  label: s.contactName ? `${s.name} - ${s.contactName}` : s.name,
+                  value: s.name,
+                }))}
                 onChange={(val) => form.setFieldValue('supplierName', val)}
                 notFoundContent="Type to enter a new supplier"
               />

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Plus, Pencil, Trash2, Download, Eye } from 'lucide-react';
 import { AutoComplete, Form, Input, InputNumber, Select, Switch, message } from 'antd';
+import { useNavigate } from 'react-router-dom';
 import { useBusiness } from '@/hooks/useBusiness.ts';
 import { purchaseService, supplierService, apiProductService, categoryService, type ApiPurchase, type ApiSupplier, type ApiProduct, type ApiCategory } from '@/services/api';
 import { Toolbar, SearchBox } from '@/components/common/Toolbar.tsx';
@@ -27,11 +28,12 @@ const STATUS_OPTIONS = ['Pending', 'Paid', 'Partial', 'Overdue', 'Cancelled'];
 const PAYMENT_OPTIONS = ['Cash', 'UPI', 'Cheque', 'Bank Transfer', 'Credit'];
 const NEW_PRODUCT_VALUE = '__new_product__';
 const EXPORT_DATE_RANGES = [
+  { label: 'All', value: 'all' },
   { label: 'Last 10 days', value: 10 },
   { label: 'Last 30 days', value: 30 },
   { label: 'Last 60 days', value: 60 },
   { label: 'Last 90 days', value: 90 },
-] as const;
+ ] as const;
 
 const STATUS_TONE: Record<string, Tone> = {
   Paid: 'success', Pending: 'warn', Partial: 'neutral', Overdue: 'danger', Cancelled: 'danger',
@@ -39,6 +41,7 @@ const STATUS_TONE: Record<string, Tone> = {
 
 export default function Purchases() {
   const { toggle } = useBusiness();
+  const navigate = useNavigate();
   const [purchases, setPurchases]       = useState<ApiPurchase[]>([]);
   const [suppliers, setSuppliers]       = useState<ApiSupplier[]>([]);
   const [products, setProducts]         = useState<ApiProduct[]>([]);
@@ -104,19 +107,20 @@ export default function Purchases() {
     form.resetFields();
     form.setFieldsValue({
       poNumber: `PO-${Date.now()}`,
-      hsn: '',
+      supplier: '',
+      supplierName: '',
       purchaseDate: new Date().toISOString().split('T')[0],
       paymentMode: 'Bank Transfer',
       status: 'Pending',
       received: true,
       business: toggle.toUpperCase(),
       items: [{
-        productId: '', productName: '', quantity: 1, packs: 0, volume: '', purchasePrice: 0,
+        productId: '', productName: '', quantity: 1, packs: 0, volume: '', purchasePrice: 0, hsn: '',
         newProduct: { sellingPrice: 0, openingStock: 0, minStock: 0 },
         inBillDiscountValue: 0, inBillDiscountType: 'amount',
         rebateDiscountValue: 0, rebateDiscountType: 'amount',
         cardDiscountValue: 0, cardDiscountType: 'amount',
-        gstRate: 18, hsn: '',
+        gstRate: 18,
       }],
     });
     setModalOpen(true);
@@ -126,9 +130,9 @@ export default function Purchases() {
     setEditing(p);
     form.setFieldsValue({
       poNumber: p.poNumber,
-      hsn: p.hsn ?? '',
       supplierId: p.supplierId ?? undefined,
-      supplierName: p.supplierName,
+      supplier:       [p.supplierName, p.supplierContactName].filter(Boolean).join(' · '),
+      supplierName: p.supplierContactName ?? '',
       purchaseDate: p.purchaseDate,
       paymentMode: p.paymentMode,
       status: p.status,
@@ -144,6 +148,7 @@ export default function Purchases() {
           packs: i.packs ?? 0,
           volume: i.volume || product?.unit || '',
           purchasePrice: i.purchasePrice,
+          hsn: i.hsn || product?.hsn || '',
           newProduct: {
             name: i.productName,
             categoryId: product?.categoryId || '',
@@ -162,10 +167,9 @@ export default function Purchases() {
           cardDiscountType: (i.cashDiscountPercent ?? 0) > 0 ? 'percent' : 'amount',
           cardDiscountValue: (i.cashDiscountPercent ?? 0) > 0 ? i.cashDiscountPercent : i.cashDiscountAmount ?? 0,
           gstRate: i.gstRate,
-          hsn: i.hsn || product?.hsn || '',
         };
       }) ?? [{
-        productId: '', quantity: 1, packs: 0, volume: '', purchasePrice: 0,
+        productId: '', quantity: 1, packs: 0, volume: '', purchasePrice: 0, hsn: '',
         newProduct: { sellingPrice: 0, openingStock: 0, minStock: 0 },
         inBillDiscountValue: 0, inBillDiscountType: 'amount',
         rebateDiscountValue: 0, rebateDiscountType: 'amount',
@@ -181,8 +185,11 @@ export default function Purchases() {
       const values = await form.validateFields();
       setSaving(true);
       const addsNewProducts = values.items.some((item: any) => item.productId === NEW_PRODUCT_VALUE);
+      const { supplier, ...purchaseValues } = values;
       const payload = {
-        ...values,
+        ...purchaseValues,
+        supplierName: supplier,
+        supplierContactName: values.supplierName || '',
         items: values.items.map((item: any) => {
           const prod = products.find((p) => p.id === item.productId);
           const category = categories.find((c) => c.id === item.newProduct?.categoryId);
@@ -222,7 +229,7 @@ export default function Purchases() {
                 brand: item.newProduct.brand || prod?.brand || '',
                 color: item.newProduct.color || prod?.color || '',
                 sellingPrice: Number(item.newProduct.sellingPrice ?? prod?.sellingPrice ?? 0),
-                unit: item.newProduct.unit || prod?.unit || item.volume || '',
+                unit: item.newProduct.unit || prod?.unit || item.volume || 'Piece',
                 minStock: Number(item.newProduct.minStock ?? prod?.minStock ?? 0),
                 openingStock: Number(item.newProduct.openingStock ?? 0),
               },
@@ -243,6 +250,7 @@ export default function Purchases() {
       setModalOpen(false);
       form.resetFields();
       if (editing) await fetchAll();
+      else if (addsNewProducts) navigate('/admin/products');
     } catch (err: any) {
       if (err?.errorFields) return;
       message.error(err?.response?.data?.error || 'Failed to save purchase');
@@ -269,21 +277,24 @@ export default function Purchases() {
   const handleExport = async () => {
     const cutoff = new Date();
     cutoff.setHours(0, 0, 0, 0);
-    cutoff.setDate(cutoff.getDate() - (exportDateRange - 1));
+    if (exportDateRange !== 'all') cutoff.setDate(cutoff.getDate() - (exportDateRange - 1));
     const exportPurchases = purchases
       .filter((purchase) => {
-        const purchaseDate = new Date(purchase.purchaseDate);
+        if (exportDateRange === 'all') return true;
+        const purchaseDate = new Date(`${purchase.purchaseDate.slice(0, 10)}T00:00:00`);
         return !Number.isNaN(purchaseDate.getTime()) && purchaseDate >= cutoff;
       })
       .sort((a, b) => new Date(b.purchaseDate).getTime() - new Date(a.purchaseDate).getTime());
     if (!exportPurchases.length) {
-      message.warning('No purchases found in the selected date range');
+      message.warning(exportDateRange === 'all'
+        ? 'No purchases to export'
+        : `No purchases found in the last ${exportDateRange} days`);
       return;
     }
     try {
       setExporting(true);
       exportPurchasesToPdf(exportPurchases, suppliers, products, toggle);
-      message.success('Purchase records exported to PDF');
+      message.success(`${exportPurchases.length} purchase${exportPurchases.length !== 1 ? 's' : ''} exported to PDF`);
     } catch (error) {
       console.error('Failed to export purchases:', error);
       message.error('Failed to export purchase PDF');
@@ -310,7 +321,7 @@ export default function Purchases() {
       id: p.id,
       po:       <span className="font-mono">{p.poNumber}</span>,
       date:     p.purchaseDate,
-      supplier: p.supplierName,
+      supplier: [p.supplierName, p.supplierContactName].filter(Boolean).join(' · '),
       items:    `${p.items?.length ?? '—'} item(s)`,
       amount:   `₹${p.totalAmount.toLocaleString('en-IN')}`,
       status:   <Badge tone={STATUS_TONE[p.status] ?? 'neutral'}>{p.status}</Badge>,
@@ -387,24 +398,52 @@ export default function Purchases() {
             <Form.Item name="poNumber" label="PO Number" rules={[{ required: true, message: 'Required' }]}>
               <Input placeholder="PO-1001" />
             </Form.Item>
-            <Form.Item name="hsn" label="HSN Code">
-              <Input placeholder="Enter HSN code" />
+            <Form.Item name="supplierId" hidden>
+              <Input />
             </Form.Item>
-            <Form.Item name="supplierId" label="Supplier">
-              <Select
-                placeholder="Select supplier (optional)"
-                allowClear
-                showSearch
-                optionFilterProp="label"
-                options={suppliers.map((s) => ({ label: s.name, value: s.id }))}
-                onChange={(val) => {
-                  const sup = suppliers.find((s) => s.id === val);
-                  if (sup) form.setFieldValue('supplierName', sup.name);
+            <Form.Item name="supplier" label="Supplier" rules={[{ required: true, message: 'Required' }]}>
+              <AutoComplete
+                placeholder="Select a supplier or type a name"
+                options={suppliers.map((supplier) => ({
+                  value: supplier.name,
+                  label: supplier.contactName ? `${supplier.name} - ${supplier.contactName}` : supplier.name,
+                }))}
+                filterOption={(input, option) =>
+                  String(option?.label ?? '').toLowerCase().includes(input.toLowerCase())
+                }
+                onSelect={(name) => {
+                  const supplier = suppliers.find((entry) => entry.name === name);
+                  if (supplier) {
+                    form.setFieldValue('supplierId', supplier.id);
+                    form.setFieldValue('supplierName', supplier.contactName ?? '');
+                  }
+                }}
+                onChange={(name) => {
+                  const supplier = suppliers.find((entry) => entry.name === name);
+                  form.setFieldValue('supplierId', supplier?.id);
+                  form.setFieldValue('supplierName', supplier?.contactName ?? '');
                 }}
               />
             </Form.Item>
-            <Form.Item name="supplierName" label="Supplier Name" rules={[{ required: true, message: 'Required' }]}>
-              <Input placeholder="Asian Paints Depot - Madurai" />
+            <Form.Item name="supplierName" label="Supplier Name">
+              <AutoComplete
+                placeholder="Select a contact or type a name"
+                options={suppliers.flatMap((supplier) =>
+                  supplier.contactName
+                    ? [{ value: supplier.contactName, label: `${supplier.contactName} · ${supplier.name}` }]
+                    : [],
+                )}
+                filterOption={(input, option) =>
+                  String(option?.label ?? '').toLowerCase().includes(input.toLowerCase())
+                }
+                onSelect={(contactName) => {
+                  const supplier = suppliers.find((entry) => entry.contactName === contactName);
+                  if (supplier) {
+                    form.setFieldValue('supplier', supplier.name);
+                    form.setFieldValue('supplierId', supplier.id);
+                  }
+                }}
+              />
             </Form.Item>
             <Form.Item name="purchaseDate" label="Purchase Date" rules={[{ required: true, message: 'Required' }]}>
               <Input type="date" />
@@ -435,12 +474,12 @@ export default function Purchases() {
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-bold uppercase tracking-widest text-ink-3">Items</span>
                   <Button type="button" variant="ghost" size="sm" icon={Plus} onClick={() => add({
-                    productId: '', productName: '', quantity: 1, packs: 0, volume: '', purchasePrice: 0,
+                    productId: '', productName: '', quantity: 1, packs: 0, volume: '', purchasePrice: 0, hsn: '',
                     newProduct: { sellingPrice: 0, openingStock: 0, minStock: 0 },
                     inBillDiscountValue: 0, inBillDiscountType: 'amount',
                     rebateDiscountValue: 0, rebateDiscountType: 'amount',
                     cardDiscountValue: 0, cardDiscountType: 'amount',
-                    gstRate: 18, hsn: '',
+                    gstRate: 18,
                   })}>
                     Add Item
                   </Button>
@@ -450,7 +489,7 @@ export default function Purchases() {
                     <Form.Item name={[field.name, 'productId']} hidden>
                       <Input />
                     </Form.Item>
-                    <Form.Item name={[field.name, 'productName']} label="Product" rules={[{ required: true, message: 'Choose or enter a product' }]} className="col-span-12 md:col-span-3">
+                    <Form.Item name={[field.name, 'productName']} label="Product" rules={[{ required: true, message: 'Choose or enter a product' }]} className="col-span-12 md:col-span-9">
                       <AutoComplete
                         placeholder="Choose from list or type product name"
                         options={products.map((product) => ({
@@ -481,6 +520,9 @@ export default function Purchases() {
                           if (product) setPurchaseItemProduct(field.name, product);
                         }}
                       />
+                    </Form.Item>
+                    <Form.Item name={[field.name, 'hsn']} label="HSN Code" className="col-span-12 md:col-span-3">
+                      <Input placeholder="HSN code" />
                     </Form.Item>
                     <div className="col-span-12 grid grid-cols-1 md:grid-cols-2 gap-x-4 rounded-xl border border-border bg-white p-3">
                           <Form.Item name={[field.name, 'newProduct', 'categoryId']} hidden>
@@ -516,11 +558,11 @@ export default function Purchases() {
                           <Form.Item name={[field.name, 'newProduct', 'color']} label="Color">
                             <Input placeholder="Color or variant" />
                           </Form.Item>
-                          <Form.Item name={[field.name, 'newProduct', 'sellingPrice']} label="Selling Price (₹)" rules={[{ required: true, message: 'Required' }]}>
+                          <Form.Item name={[field.name, 'newProduct', 'sellingPrice']} label="Selling Price (₹)" rules={[{ required: true, message: 'Required' }]} className="md:col-span-2">
                             <InputNumber min={0} className="w-full" />
                           </Form.Item>
-                          <Form.Item name={[field.name, 'newProduct', 'unit']} label="Unit" rules={[{ required: true, message: 'Required' }]}>
-                            <Input placeholder="e.g. Liter, Kg, Piece" />
+                          <Form.Item name={[field.name, 'purchasePrice']} label="Purchase Price (₹)" rules={[{ required: true }]} className="md:col-span-2">
+                            <InputNumber min={0} className="w-full" />
                           </Form.Item>
                           <Form.Item name={[field.name, 'newProduct', 'minStock']} label="Min Stock Alert">
                             <InputNumber min={0} className="w-full" />
@@ -532,9 +574,6 @@ export default function Purchases() {
                             <Input placeholder="Short product description" />
                           </Form.Item>
                     </div>
-                    <Form.Item name={[field.name, 'hsn']} label="HSN Code" className="col-span-6 md:col-span-2">
-                      <Input placeholder="HSN code" />
-                    </Form.Item>
                     <Form.Item name={[field.name, 'quantity']} label="Qty" rules={[{ required: true }]} className="col-span-3 md:col-span-2">
                       <InputNumber min={1} className="w-full" />
                     </Form.Item>
@@ -543,9 +582,6 @@ export default function Purchases() {
                     </Form.Item>
                     <Form.Item name={[field.name, 'volume']} label="Volume (kg/lt/M)" className="col-span-6 md:col-span-3">
                       <Input placeholder="e.g. 20 lt, 5 kg, 1 M" />
-                    </Form.Item>
-                    <Form.Item name={[field.name, 'purchasePrice']} label="Purchase Price (₹)" rules={[{ required: true }]} className="col-span-4 md:col-span-2">
-                      <InputNumber min={0} className="w-full" />
                     </Form.Item>
                     <Form.Item name={[field.name, 'inBillDiscountValue']} label="In-Bill Disc" className="col-span-6 md:col-span-2">
                       <InputNumber
@@ -610,7 +646,7 @@ export default function Purchases() {
       <AppModal
         open={viewOpen}
         title={`Purchase Order — ${viewing?.poNumber}`}
-        subtitle={`${viewing?.supplierName} · ${viewing?.purchaseDate}`}
+        subtitle={`${[viewing?.supplierName, viewing?.supplierContactName].filter(Boolean).join(' · ')} · ${viewing?.purchaseDate}`}
         onClose={() => setViewOpen(false)}
         onConfirm={() => setViewOpen(false)}
         confirmText="Close"
@@ -622,7 +658,6 @@ export default function Purchases() {
               <div><span className="text-ink-3 text-xs">Status</span><div><Badge tone={STATUS_TONE[viewing.status] ?? 'neutral'}>{viewing.status}</Badge></div></div>
               <div><span className="text-ink-3 text-xs">Stock Received</span><div className="font-medium">{viewing.received ? 'Yes' : 'No'}</div></div>
               <div><span className="text-ink-3 text-xs">Payment Mode</span><div className="font-medium">{viewing.paymentMode}</div></div>
-              <div><span className="text-ink-3 text-xs">HSN Code</span><div className="font-medium">{viewing.hsn || '—'}</div></div>
               <div><span className="text-ink-3 text-xs">Total Amount</span><div className="font-bold text-lg">₹{viewing.totalAmount.toLocaleString('en-IN')}</div></div>
               <div><span className="text-ink-3 text-xs">GST Amount</span><div className="font-medium">₹{viewing.gstAmount.toLocaleString('en-IN')}</div></div>
             </div>
@@ -630,7 +665,7 @@ export default function Purchases() {
               <table className="w-full text-sm border-collapse">
                 <thead>
                   <tr className="bg-surface-2">
-                    {['Product', 'HSN Code', 'Qty', 'Price', 'Cash Disc %', 'GST%', 'Amount'].map((h) => (
+                    {['Product', 'HSN', 'Qty', 'Price', 'Cash Disc %', 'GST%', 'Amount'].map((h) => (
                       <th key={h} className="text-left text-xs font-bold text-ink-3 px-3 py-2 border-b border-border">{h}</th>
                     ))}
                   </tr>
