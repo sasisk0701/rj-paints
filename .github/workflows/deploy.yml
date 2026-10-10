@@ -42,5 +42,5 @@ jobs:
           printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
           ssh-keyscan -H "$HOST" >> ~/.ssh/known_hosts
-          ssh -i ~/.ssh/deploy_key "$USER@$HOST" "bash /home/ubuntu/deploy.sh"
+          ssh -i ~/.ssh/deploy_key "$USER@$HOST" "bash /home/ubuntu/deploy.sh && cd /home/ubuntu/rj-paints/server && npx prisma db push"
           
