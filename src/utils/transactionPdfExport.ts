@@ -12,7 +12,6 @@ interface PdfColumn {
   width: number;
   align?: 'left' | 'center' | 'right';
 }
-
 interface PdfItem {
   cells: string[];
 }
