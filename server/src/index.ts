@@ -662,7 +662,6 @@ app.get('/api/products', authenticateJWT, async (req, res) => {
   const where: any = { deletedAt: null };
   if (business) where.business = business.toUpperCase();
   if (category) where.categoryId = category;
-  if (status)   where.status = status;
   if (search)   where.OR = [
     { name:        { contains: search } },
     { sku:         { contains: search } },
@@ -695,7 +694,7 @@ app.get('/api/products', authenticateJWT, async (req, res) => {
     },
     orderBy: { createdAt: 'desc' },
   });
-  res.json(products.map(({ purchaseItems, ...product }) => {
+  const response = products.map(({ purchaseItems, ...product }) => {
     const latestPurchase = purchaseItems
       .filter((item) => !item.purchase.deletedAt)
       .sort((a, b) => b.purchase.createdAt.getTime() - a.purchase.createdAt.getTime())[0];
@@ -713,6 +712,7 @@ app.get('/api/products', authenticateJWT, async (req, res) => {
       }));
     return {
       ...product,
+      status: product.stock > 0 || product.status === 'In Stock' ? 'In Stock' : 'Out of Stock',
       purchaseHistory,
       latestPurchase: latestPurchase ? {
         poNumber: latestPurchase.purchase.poNumber,
@@ -721,7 +721,8 @@ app.get('/api/products', authenticateJWT, async (req, res) => {
         amount: latestPurchase.amount,
       } : null,
     };
-  }));
+  }).filter((product) => !status || product.status === status);
+  res.json(response);
 });
 
 app.get('/api/products/:id', authenticateJWT, async (req, res) => {
@@ -730,7 +731,10 @@ app.get('/api/products/:id', authenticateJWT, async (req, res) => {
     include: { category: true },
   });
   if (!product || product.deletedAt) return res.status(404).json({ error: 'Product not found' });
-  res.json(product);
+  res.json({
+    ...product,
+    status: product.stock > 0 || product.status === 'In Stock' ? 'In Stock' : 'Out of Stock',
+  });
 });
 
 app.post('/api/products', authenticateJWT, async (req: AuthRequest, res) => {
@@ -738,56 +742,21 @@ app.post('/api/products', authenticateJWT, async (req: AuthRequest, res) => {
           hsn, purchasePrice, sellingPrice, gstRate, stock, minStock, unit, business, image } = req.body;
   if (!name || !business)
     return res.status(400).json({ error: 'name and business are required' });
-  const openingStock = Number(stock ?? 1);
+  const initialStock = Number(stock ?? 0);
+  if (!Number.isInteger(initialStock) || initialStock < 0)
+    return res.status(400).json({ error: 'stock must be a non-negative whole number' });
   const minimumStock = Number(minStock ?? 0);
   const purchaseCost = Number(purchasePrice);
   const productGstRate = Number(gstRate ?? 18);
-  const status = openingStock <= 0 ? 'Out of Stock' : openingStock <= minimumStock ? 'Low Stock' : 'In Stock';
-  const product = await prisma.$transaction(async (tx) => {
-    const created = await tx.product.create({
-      data: { name, categoryId, categoryName: categoryName || '', brand, sku, barcode, hsn: hsn || '',
-              description, purchasePrice: purchaseCost, sellingPrice: +sellingPrice,
-              gstRate: productGstRate, stock: openingStock, minStock: minimumStock,
-              unit: unit || 'Piece', business: business.toUpperCase(), status, image },
-    });
-
-    if (openingStock > 0) {
-      const subtotal = openingStock * purchaseCost;
-      const totalGst = subtotal * productGstRate / 100;
-      await tx.stockInRecord.create({
-        data: {
-          invoiceNo: `OPEN-${created.id}`,
-          supplierName: 'Opening Stock',
-          purchaseDate: new Date(),
-          subtotal,
-          totalGst,
-          grandTotal: subtotal + totalGst,
-          paymentMode: 'Opening Balance',
-          notes: 'Opening stock entry',
-          items: {
-            create: {
-              productId: created.id,
-              hsn: created.hsn,
-              quantity: openingStock,
-              purchasePrice: purchaseCost,
-              gstRate: productGstRate,
-              total: subtotal + totalGst,
-            },
-          },
-        },
-      });
-    }
-
-    return created;
+  const product = await prisma.product.create({
+    data: { name, categoryId, categoryName: categoryName || '', brand, sku, barcode, hsn: hsn || '',
+            description, purchasePrice: purchaseCost, sellingPrice: Number(sellingPrice ?? 0),
+            gstRate: productGstRate, stock: initialStock, minStock: minimumStock,
+            unit: unit || 'Piece', business: business.toUpperCase(), status: 'In Stock', image },
   });
   await prisma.activityLog.create({
     data: { userId: req.user.id, userName: req.user.name, action: 'Product Created', module: 'Catalog', reference: name, business: business.toLowerCase() },
   });
-  if (openingStock > 0) {
-    await prisma.activityLog.create({
-      data: { userId: req.user.id, userName: req.user.name, action: 'Stock In Created', module: 'Inventory', reference: `OPEN-${product.id}`, business: business.toLowerCase() },
-    });
-  }
   res.status(201).json(product);
 });
 
@@ -797,7 +766,8 @@ app.put('/api/products/:id', authenticateJWT, async (req: AuthRequest, res) => {
 
   const { stock, minStock, ...rest } = req.body;
   const s = +(stock ?? existing.stock), m = +(minStock ?? existing.minStock);
-  const status = s <= 0 ? 'Out of Stock' : s <= m ? 'Low Stock' : 'In Stock';
+  const quantityOut = existing.stock - s;
+  const status = s > 0 ? 'In Stock' : quantityOut > 0 || existing.status === 'Out of Stock' ? 'Out of Stock' : 'In Stock';
   const product = await prisma.$transaction(async (tx) => {
     const updated = await tx.product.update({
       where: { id: req.params.id },
@@ -808,7 +778,6 @@ app.put('/api/products/:id', authenticateJWT, async (req: AuthRequest, res) => {
               image:         Object.prototype.hasOwnProperty.call(rest, 'image') ? (rest.image || null) : undefined },
     });
 
-    const quantityOut = existing.stock - s;
     const quantityIn = s - existing.stock;
     if (quantityOut > 0 || quantityIn > 0) {
       const quantity = Math.abs(s - existing.stock);
@@ -1089,6 +1058,7 @@ const toneForStock = (stock: number, minStock: number) => {
   if (stock <= minStock) return 'warn';
   return 'success';
 };
+const statusForStock = (stock: number) => stock <= 0 ? 'Out of Stock' : 'In Stock';
 
 // ─── Inventory: Overview ────────────────────────────────────────────────
 app.get('/api/inventory/overview', authenticateJWT, async (req, res) => {
@@ -1347,7 +1317,7 @@ app.post('/api/inventory/stock-in', authenticateJWT, async (req: AuthRequest, re
           where: { id: product.id },
           data: {
             stock: nextStock,
-            status: nextStock <= 0 ? 'Out of Stock' : nextStock <= product.minStock ? 'Low Stock' : 'In Stock',
+            status: statusForStock(nextStock),
           },
         });
       }
@@ -1551,7 +1521,7 @@ app.post('/api/inventory/stock-out', authenticateJWT, async (req: AuthRequest, r
           where: { id: product.id },
           data: {
             stock: nextStock,
-            status: nextStock <= 0 ? 'Out of Stock' : nextStock <= product.minStock ? 'Low Stock' : 'In Stock',
+            status: statusForStock(nextStock),
           },
         });
       }
@@ -1690,11 +1660,7 @@ app.post('/api/inventory/maintenance', authenticateJWT, async (req: AuthRequest,
           where: { id: product.id },
           data: {
             stock: physicalCount,
-            status: toneForStock(physicalCount, product.minStock) === 'danger'
-              ? 'Out of Stock'
-              : physicalCount <= product.minStock
-                ? 'Low Stock'
-              : 'In Stock',
+            status: statusForStock(physicalCount),
           },
         });
 
@@ -1751,7 +1717,7 @@ async function adjustReceivedPurchaseStock(
       where: { id: productId },
       data: {
         stock: nextStock,
-        status: nextStock <= 0 ? 'Out of Stock' : nextStock <= product.minStock ? 'Low Stock' : 'In Stock',
+        status: statusForStock(nextStock),
       },
     });
   }
@@ -1899,20 +1865,15 @@ app.post('/api/purchases', authenticateJWT, async (req: AuthRequest, res) => {
             || !details.unit?.trim()
             || !Number.isFinite(Number(details.sellingPrice ?? 0))
             || !Number.isFinite(Number(details.minStock ?? 0))
-            || !Number.isFinite(Number(details.openingStock ?? 0))
             || Number(details.sellingPrice ?? 0) < 0
             || Number(details.minStock ?? 0) < 0
-            || Number(details.openingStock ?? 0) < 0
-            || !Number.isInteger(Number(details.minStock ?? 0))
-            || !Number.isInteger(Number(details.openingStock ?? 0))) {
+            || !Number.isInteger(Number(details.minStock ?? 0))) {
             throw new Error('New products require a name, brand and unit; prices and stock values must be valid non-negative numbers');
           }
-          const openingStock = Number(details.openingStock ?? 0);
           const minimumStock = Number(details.minStock ?? 0);
           if (productId) {
             const existingProduct = await tx.product.findUnique({ where: { id: productId } });
             if (!existingProduct || existingProduct.deletedAt) throw new Error(`Product not found: ${productId}`);
-            const nextStock = existingProduct.stock + openingStock;
             const product = await tx.product.update({
               where: { id: productId },
               data: {
@@ -1926,10 +1887,11 @@ app.post('/api/purchases', authenticateJWT, async (req: AuthRequest, res) => {
                 purchasePrice: amounts.purchasePrice,
                 sellingPrice: Number(details.sellingPrice ?? existingProduct.sellingPrice),
                 gstRate: amounts.gstRate,
-                stock: nextStock,
                 minStock: minimumStock,
                 unit: details.unit,
-                status: nextStock === 0 ? 'Out of Stock' : nextStock <= minimumStock ? 'Low Stock' : 'In Stock',
+                status: existingProduct.stock > 0 || existingProduct.status === 'In Stock'
+                  ? 'In Stock'
+                  : 'Out of Stock',
               },
             });
             productName = product.name;
@@ -1948,12 +1910,12 @@ app.post('/api/purchases', authenticateJWT, async (req: AuthRequest, res) => {
                 purchasePrice: amounts.purchasePrice,
                 sellingPrice: Number(details.sellingPrice ?? 0),
                 gstRate: amounts.gstRate,
-                stock: openingStock,
+                stock: 0,
                 minStock: minimumStock,
                 unit: details.unit,
                 image: details.image || null,
                 business: purchaseBusiness,
-                status: openingStock === 0 ? 'Out of Stock' : openingStock <= minimumStock ? 'Low Stock' : 'In Stock',
+                status: 'In Stock',
               },
             });
             productId = product.id;
@@ -2081,7 +2043,7 @@ app.put('/api/purchases/:id', authenticateJWT, async (req: AuthRequest, res) => 
               gstRate: Number(item.gstRate ?? product.gstRate),
               minStock,
               unit: details.unit || product.unit,
-              status: product.stock <= 0 ? 'Out of Stock' : product.stock <= minStock ? 'Low Stock' : 'In Stock',
+              status: product.stock > 0 || product.status === 'In Stock' ? 'In Stock' : 'Out of Stock',
             },
           });
         }
