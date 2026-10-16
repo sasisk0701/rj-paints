@@ -252,7 +252,6 @@ export default function Suppliers() {
                 disabled={!!editing}
                 options={[
                   { label: 'Paints',    value: 'PAINTS' },
-                  { label: 'Interiors', value: 'INTERIORS' },
                 ]}
               />
             </Form.Item>

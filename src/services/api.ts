@@ -441,7 +441,6 @@ export interface NewPurchaseProduct {
   sellingPrice?: number;
   unit: string;
   minStock?: number;
-  openingStock?: number;
   description?: string;
 }
 export const purchaseService = {

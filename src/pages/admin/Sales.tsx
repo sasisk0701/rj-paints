@@ -350,9 +350,10 @@ export default function Sales() {
                 </div>
                 {fields.map((field) => (
                   <div key={field.key} className="grid grid-cols-12 gap-3 items-end rounded-2xl border border-border bg-surface-2 p-4">
-                    <Form.Item name={[field.name, 'productId']} label="Product" rules={[{ required: true, message: 'Required' }]} className="col-span-12 md:col-span-3">
+                    <Form.Item name={[field.name, 'productId']} label="Product" rules={[{ required: true, message: 'Required' }]} className="col-span-12 md:col-span-5">
                       <Select
                         placeholder="Choose product" showSearch optionFilterProp="label"
+                        popupMatchSelectWidth={false}
                         options={products.map((p) => ({ label: `${p.name} (${p.sku})`, value: p.id }))}
                         onChange={(val) => {
                           const prod = products.find((p) => p.id === val);

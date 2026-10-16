@@ -1,4 +1,6 @@
 import { COMPANY_DETAILS } from '@/data/paintsData';
+import { jsPDF } from 'jspdf';
+import autoTable from 'jspdf-autotable';
 import type {
   ApiProduct,
   ApiPurchase,
@@ -12,6 +14,7 @@ interface PdfColumn {
   width: number;
   align?: 'left' | 'center' | 'right';
 }
+
 interface PdfItem {
   cells: string[];
 }
@@ -39,12 +42,6 @@ interface PdfDocument {
   summary: PdfSummaryRow[];
 }
 
-const PAGE_WIDTH = 842;
-const PAGE_HEIGHT = 595;
-const PURCHASE_PAGE_WIDTH = 1191;
-const PURCHASE_PAGE_HEIGHT = 842;
-const PAGE_MARGIN = 22;
-const TABLE_WIDTH = PAGE_WIDTH - PAGE_MARGIN * 2;
 const ITEMS_PER_PAGE = 12;
 const currency = (value: number) =>
   `Rs. ${value.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -57,10 +54,6 @@ function ascii(value: unknown) {
     .replace(/[‘’]/g, "'")
     .normalize('NFKD')
     .replace(/[^\x20-\x7E]/g, '?');
-}
-
-function pdfEscape(value: unknown) {
-  return ascii(value).replace(/\\/g, '\\\\').replace(/\(/g, '\\(').replace(/\)/g, '\\)');
 }
 
 function safeFileName(value: string) {
@@ -88,166 +81,6 @@ function truncate(value: string, maxCharacters: number) {
   return `${text.slice(0, Math.max(0, maxCharacters - 3))}...`;
 }
 
-function renderPage(
-  document: PdfDocument,
-  pageItems: PdfItem[],
-  pageIndex: number,
-  isLastPage: boolean,
-  pageNumber: number,
-  totalPages: number,
-  businessName: string
-) {
-  const commands: string[] = [];
-  const text = (x: number, y: number, value: unknown, size = 8, bold = false, align: PdfColumn['align'] = 'left') => {
-    const content = ascii(value);
-    const estimatedWidth = content.length * size * 0.5;
-    const startX = align === 'right' ? x - estimatedWidth : align === 'center' ? x - estimatedWidth / 2 : x;
-    commands.push(`BT /${bold ? 'F2' : 'F1'} ${size} Tf ${startX.toFixed(2)} ${y.toFixed(2)} Td (${pdfEscape(content)}) Tj ET`);
-  };
-  const line = (x1: number, y1: number, x2: number, y2: number, width = 0.55) => {
-    commands.push(`${width} w ${x1} ${y1} m ${x2} ${y2} l S`);
-  };
-  const rect = (x: number, y: number, width: number, height: number, fill?: number) => {
-    if (fill !== undefined) commands.push(`${fill} g ${x} ${y} ${width} ${height} re f 0 g`);
-    commands.push(`${x} ${y} ${width} ${height} re S`);
-  };
-
-  rect(PAGE_MARGIN, 24, TABLE_WIDTH, PAGE_HEIGHT - 48);
-  text(34, 556, businessName, 15, true);
-  text(34, 540, COMPANY_DETAILS.address, 8);
-  text(34, 527, `Phone: ${COMPANY_DETAILS.contactNumbers.join(' / ')}  |  GSTIN: ${COMPANY_DETAILS.gstNumber}`, 7.5);
-  text(808, 556, document.title.toUpperCase(), 10, true, 'right');
-  text(808, 540, COMPANY_DETAILS.website, 7.5, false, 'right');
-  line(34, 516, 808, 516);
-
-  text(34, 499, `${document.title === 'Tax Invoice' ? 'Invoice' : 'PO'} No: ${document.number}`, 8.5, true);
-  text(410, 499, `Date: ${formatDate(document.date)}`, 8.5);
-  text(808, 499, `Status: ${document.status}`, 8, true, 'right');
-  text(34, 483, `${document.partyLabel}: ${document.party}`, 8.5, true);
-  text(410, 483, `Payment: ${document.paymentMode}`, 8);
-  if (document.gstMode) text(808, 483, `GST Mode: ${document.gstMode}`, 8, false, 'right');
-  if (document.address) text(34, 468, `Address: ${truncate(document.address, 100)}`, 7.5);
-  if (document.phone) text(34, 455, `Phone: ${document.phone}`, 7.5);
-  if (document.gstNumber) text(410, 468, `GSTIN: ${document.gstNumber}`, 7.5);
-  if (document.notes?.trim()) text(808, 468, `Notes: ${truncate(document.notes.trim(), 90)}`, 7.5, false, 'right');
-
-  const tableTop = 440;
-  const headerHeight = 31;
-  const rowHeight = 19;
-  const tableLeft = PAGE_MARGIN + 12;
-  const tableWidth = TABLE_WIDTH - 24;
-  const columnScale = tableWidth / document.columns.reduce((total, column) => total + column.width, 0);
-  const widths = document.columns.map((column) => column.width * columnScale);
-  const columnStarts = widths.reduce<number[]>((starts, width, index) => {
-    starts.push(index === 0 ? tableLeft : starts[index - 1] + widths[index - 1]);
-    return starts;
-  }, []);
-
-  rect(tableLeft, tableTop - headerHeight, tableWidth, headerHeight, 0.9);
-  document.columns.forEach((column, index) => {
-    const x = columnStarts[index];
-    const maxChars = Math.max(5, Math.floor(widths[index] / 3.3));
-    const words = column.label.split(' ');
-    const headerLines: string[] = [];
-    let currentLine = '';
-    words.forEach((word) => {
-      if (!currentLine || `${currentLine} ${word}`.length <= maxChars) {
-        currentLine = currentLine ? `${currentLine} ${word}` : word;
-      } else {
-        headerLines.push(currentLine);
-        currentLine = word;
-      }
-    });
-    if (currentLine) headerLines.push(currentLine);
-    headerLines.slice(0, 3).forEach((value, lineIndex) => {
-      text(x + widths[index] / 2, tableTop - 11 - lineIndex * 8, value, 6.1, true, 'center');
-    });
-  });
-
-  let rowTop = tableTop - headerHeight;
-  pageItems.forEach((item) => {
-    const rowBottom = rowTop - rowHeight;
-    rect(tableLeft, rowBottom, tableWidth, rowHeight);
-    item.cells.forEach((value, columnIndex) => {
-      const column = document.columns[columnIndex];
-      const start = columnStarts[columnIndex];
-      const maxChars = Math.max(4, Math.floor((widths[columnIndex] - 8) / 3.3));
-      const align = column.align ?? 'left';
-      const x = align === 'right' ? start + widths[columnIndex] - 4
-        : align === 'center' ? start + widths[columnIndex] / 2
-          : start + 4;
-      text(x, rowTop - 12, truncate(value, maxChars), 6.4, false, align);
-    });
-    rowTop = rowBottom;
-  });
-
-  let columnX = tableLeft;
-  widths.slice(0, -1).forEach((width) => {
-    columnX += width;
-    line(columnX, rowTop, columnX, tableTop);
-  });
-
-  if (isLastPage) {
-    const summaryX = 500;
-    const summaryWidth = tableLeft + tableWidth - summaryX;
-    const summaryY = 66;
-    const summaryHeight = 96;
-    rect(summaryX, summaryY, summaryWidth, summaryHeight, 0.97);
-    document.summary.forEach((row, index) => {
-      const y = summaryY + summaryHeight - 14 - index * 12;
-      text(summaryX + 10, y, row.label, 7.5, index === document.summary.length - 1);
-      text(summaryX + summaryWidth - 10, y, currency(row.value), 7.5, index === document.summary.length - 1, 'right');
-    });
-  } else {
-    text(34, 76, 'Continued on next page', 8, true);
-    text(808, 76, `Items ${pageIndex * ITEMS_PER_PAGE + 1}-${pageIndex * ITEMS_PER_PAGE + pageItems.length}`, 8, false, 'right');
-  }
-
-  text(808, 40, `Page ${pageNumber} of ${totalPages}`, 7.5, false, 'right');
-  return commands.join('\n');
-}
-
-function savePdfPages(pageContents: string[], pageWidth: number, pageHeight: number, fileName: string) {
-  const pageObjectIds = pageContents.map((_, index) => 5 + index * 2);
-  const objects = [
-    '<< /Type /Catalog /Pages 2 0 R >>',
-    `<< /Type /Pages /Kids [${pageObjectIds.map((id) => `${id} 0 R`).join(' ')}] /Count ${pageObjectIds.length} >>`,
-    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
-    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>',
-  ];
-  const encoder = new TextEncoder();
-  pageContents.forEach((content, index) => {
-    const pageObjectId = 5 + index * 2;
-    objects.push(
-      `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pageWidth} ${pageHeight}] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents ${pageObjectId + 1} 0 R >>`,
-      `<< /Length ${encoder.encode(content).length} >>\nstream\n${content}\nendstream`
-    );
-  });
-
-  let pdf = '%PDF-1.4\n';
-  const offsets = [0];
-  objects.forEach((object, index) => {
-    offsets.push(encoder.encode(pdf).length);
-    pdf += `${index + 1} 0 obj\n${object}\nendobj\n`;
-  });
-  const xrefOffset = encoder.encode(pdf).length;
-  pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
-  offsets.slice(1).forEach((offset) => {
-    pdf += `${String(offset).padStart(10, '0')} 00000 n \n`;
-  });
-  pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF`;
-
-  const blob = new Blob([encoder.encode(pdf)], { type: 'application/pdf' });
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement('a');
-  anchor.href = url;
-  anchor.download = safeFileName(fileName) + '.pdf';
-  document.body.appendChild(anchor);
-  anchor.click();
-  anchor.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
-}
-
 function downloadPdf(documents: PdfDocument[], business: string, filePrefix: string) {
   if (!documents.length) throw new Error('There are no records to export');
   const businessName = business.toLowerCase() === 'interiors'
@@ -264,15 +97,140 @@ function downloadPdf(documents: PdfDocument[], business: string, filePrefix: str
     );
     return pages.map((pageItems, index) => ({ document, pageItems, pageIndex: index, isLastPage: index === pages.length - 1 }));
   });
-  const pageContents = pageData.map((page, index) =>
-    renderPage(page.document, page.pageItems, page.pageIndex, page.isLastPage, index + 1, pageData.length, businessName)
+  const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+  pageData.forEach((page, index) => {
+    if (index > 0) doc.addPage('a4', 'landscape');
+    const record = page.document;
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(14);
+    doc.text(ascii(businessName), 12, 12);
+    doc.setFontSize(9);
+    doc.text(ascii(record.title.toUpperCase()), 285, 12, { align: 'right' });
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7);
+    doc.text(ascii(COMPANY_DETAILS.address), 12, 18);
+    doc.text(ascii(`Phone: ${COMPANY_DETAILS.contactNumbers.join(' / ')} | GSTIN: ${COMPANY_DETAILS.gstNumber}`), 12, 23);
+    doc.text(ascii(COMPANY_DETAILS.website), 285, 18, { align: 'right' });
+    doc.setDrawColor(100);
+    doc.line(12, 27, 285, 27);
+
+    doc.setFontSize(7.5);
+    doc.setFont('helvetica', 'bold');
+    doc.text(ascii(`${record.title === 'Tax Invoice' ? 'Invoice' : 'PO'} No: ${record.number}`), 12, 34);
+    doc.setFont('helvetica', 'normal');
+    doc.text(ascii(`Date: ${formatDate(record.date)}`), 145, 34);
+    doc.setFont('helvetica', 'bold');
+    doc.text(ascii(`Status: ${record.status}`), 285, 34, { align: 'right' });
+    doc.text(ascii(`${record.partyLabel}: ${record.party}`), 12, 40);
+    doc.setFont('helvetica', 'normal');
+    doc.text(ascii(`Payment: ${record.paymentMode}`), 145, 40);
+    if (record.gstMode) doc.text(ascii(`GST Mode: ${record.gstMode}`), 285, 40, { align: 'right' });
+    if (record.address) doc.text(ascii(`Address: ${truncate(record.address, 100)}`), 12, 46);
+    if (record.phone) doc.text(ascii(`Phone: ${record.phone}`), 12, 51);
+    if (record.gstNumber) doc.text(ascii(`GSTIN: ${record.gstNumber}`), 145, 46);
+    if (record.notes?.trim()) doc.text(ascii(`Notes: ${truncate(record.notes.trim(), 90)}`), 285, 46, { align: 'right' });
+
+    const columnWidthTotal = record.columns.reduce((total, column) => total + column.width, 0);
+    const availableWidth = 273;
+    const columnStyles = Object.fromEntries(record.columns.map((column, columnIndex) => [
+      columnIndex,
+      {
+        cellWidth: availableWidth * column.width / columnWidthTotal,
+        halign: column.align ?? 'left',
+      },
+    ]));
+    autoTable(doc, {
+      head: [record.columns.map((column) => ascii(column.label))],
+      body: page.pageItems.map((item) => item.cells.map(ascii)),
+      startY: 56,
+      margin: { left: 12, right: 12, bottom: 45 },
+      styles: { font: 'helvetica', fontSize: 6.5, cellPadding: 1.5, overflow: 'linebreak' },
+      headStyles: { fillColor: [230, 230, 230], textColor: [25, 25, 25], fontStyle: 'bold' },
+      columnStyles,
+      rowPageBreak: 'avoid',
+      didDrawPage: () => {
+        if (!page.isLastPage) {
+          doc.setFontSize(7);
+          doc.text(ascii(`Continued on next page · Items ${page.pageIndex * ITEMS_PER_PAGE + 1}-${page.pageIndex * ITEMS_PER_PAGE + page.pageItems.length}`), 12, 199);
+        }
+      },
+    });
+    if (page.isLastPage) {
+      autoTable(doc, {
+        body: record.summary.map((row) => [ascii(row.label), currency(row.value)]),
+        startY: 153,
+        margin: { left: 176, right: 12 },
+        tableWidth: 109,
+        styles: { font: 'helvetica', fontSize: 7, cellPadding: 1.2 },
+        columnStyles: { 0: { cellWidth: 70 }, 1: { halign: 'right' } },
+        theme: 'grid',
+      });
+    }
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7);
+    doc.text(`Page ${index + 1} of ${pageData.length}`, 285, 203, { align: 'right' });
+  });
+  doc.save(`${safeFileName(`${filePrefix}-${business}-${new Date().toISOString().slice(0, 10)}`)}.pdf`);
+}
+
+const PRODUCT_ROWS_PER_PAGE = 10;
+
+export function exportProductsToPdf(products: ApiProduct[], business: string, filePrefix = 'products') {
+  if (!products.length) throw new Error('There are no products to export');
+  const businessName = business.toLowerCase() === 'interiors'
+    ? COMPANY_DETAILS.interiorsName
+    : COMPANY_DETAILS.name;
+  const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a3' });
+  const columns = [
+    'Product', 'Category', 'HSN', 'Brand / Color', 'Unit', 'Purchase Price',
+    'Selling Price', 'GST %', 'Stock', 'Min Stock', 'Status',
+  ];
+  const chunks = Array.from(
+    { length: Math.ceil(products.length / PRODUCT_ROWS_PER_PAGE) },
+    (_, index) => products.slice(index * PRODUCT_ROWS_PER_PAGE, (index + 1) * PRODUCT_ROWS_PER_PAGE)
   );
-  savePdfPages(
-    pageContents,
-    PAGE_WIDTH,
-    PAGE_HEIGHT,
-    `${filePrefix}-${business}-${new Date().toISOString().slice(0, 10)}`
-  );
+  chunks.forEach((pageProducts, index) => {
+    if (index > 0) doc.addPage('a3', 'landscape');
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(16);
+    doc.text(ascii(businessName), 12, 13);
+    doc.setFontSize(11);
+    doc.text('Product Catalog', 12, 21);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    doc.text(`Generated: ${new Date().toLocaleDateString('en-IN')}`, 408, 13, { align: 'right' });
+    autoTable(doc, {
+      head: [columns],
+      body: pageProducts.map((product) => [
+        product.name,
+        product.categoryName,
+        product.hsn ?? '',
+        [product.brand, product.color].filter(Boolean).join(' / '),
+        product.unit,
+        displayAmount(product.purchasePrice),
+        displayAmount(product.sellingPrice),
+        `${displayNumber(product.gstRate)}%`,
+        displayNumber(product.stock),
+        displayNumber(product.minStock),
+        product.status,
+      ].map(ascii)),
+      startY: 27,
+      margin: { left: 12, right: 12 },
+      styles: { font: 'helvetica', fontSize: 7, cellPadding: 2, overflow: 'linebreak' },
+      headStyles: { fillColor: [230, 230, 230], textColor: [30, 30, 30], fontStyle: 'bold' },
+      columnStyles: {
+        5: { halign: 'right' },
+        6: { halign: 'right' },
+        7: { halign: 'right' },
+        8: { halign: 'right' },
+        9: { halign: 'right' },
+      },
+      tableWidth: 'auto',
+    });
+    doc.setFontSize(8);
+    doc.text(`Page ${index + 1} of ${chunks.length}`, 408, 288, { align: 'right' });
+  });
+  doc.save(`${safeFileName(`${filePrefix}-${business}-${new Date().toISOString().slice(0, 10)}`)}.pdf`);
 }
 
 export function exportSalesToPdf(sales: ApiSale[], customers: ApiCustomer[], business: string) {
@@ -343,151 +301,112 @@ export function exportSalesToPdf(sales: ApiSale[], customers: ApiCustomer[], bus
   downloadPdf(documents, business, 'sales');
 }
 
-function renderPurchaseInvoicePage(
+function drawPurchaseInvoicePage(
+  doc: jsPDF,
   purchase: ApiPurchase,
   supplier: ApiSupplier | undefined,
   pageItems: string[][],
-  pageIndex: number,
   totalPages: number,
   pageNumber: number,
   businessName: string,
   categoryLabel: string,
-  totals: { value: number; inBill: number; cash: number; rebate: number; taxable: number; tax: number; total: number },
-  includeTotals: boolean
+  isLastPage: boolean
 ) {
-  const commands: string[] = [];
-  const margin = 32;
-  const tableWidth = PURCHASE_PAGE_WIDTH - margin * 2;
-  const text = (x: number, y: number, value: unknown, size = 9, bold = false, align: PdfColumn['align'] = 'left') => {
-    const content = ascii(value);
-    const estimatedWidth = content.length * size * 0.5;
-    const startX = align === 'right' ? x - estimatedWidth : align === 'center' ? x - estimatedWidth / 2 : x;
-    commands.push(`BT /${bold ? 'F2' : 'F1'} ${size} Tf ${startX.toFixed(2)} ${y.toFixed(2)} Td (${pdfEscape(content)}) Tj ET`);
-  };
-  const line = (x1: number, y1: number, x2: number, y2: number, width = 0.6) => {
-    commands.push(`${width} w ${x1} ${y1} m ${x2} ${y2} l S`);
-  };
-  const rect = (x: number, y: number, width: number, height: number, fill?: number) => {
-    if (fill !== undefined) commands.push(`${fill} g ${x} ${y} ${width} ${height} re f 0 g`);
-    commands.push(`${x} ${y} ${width} ${height} re S`);
-  };
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(18);
+  doc.text(ascii(businessName), 12, 18);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(10);
+  doc.text(ascii(COMPANY_DETAILS.address), 12, 25);
+  doc.setFontSize(9);
+  doc.text(ascii(`Phone: ${COMPANY_DETAILS.contactNumbers.join(' / ')}`), 12, 30);
+  doc.text(ascii(`GSTIN: ${COMPANY_DETAILS.gstNumber}`), 12, 35);
 
-  rect(margin, 28, tableWidth, PURCHASE_PAGE_HEIGHT - 56);
-  text(48, 790, businessName, 18, true);
-  text(48, 772, COMPANY_DETAILS.address, 10);
-  text(48, 756, `Phone: ${COMPANY_DETAILS.contactNumbers.join(' / ')}`, 9);
-  text(48, 741, `GSTIN: ${COMPANY_DETAILS.gstNumber}`, 9);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(12);
+  doc.text('INVOICE DETAILS', 169, 18);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(9);
+  doc.text(ascii(`Invoice No: ${purchase.poNumber}`), 169, 25);
+  doc.text(ascii(`Invoice Date: ${formatDate(purchase.purchaseDate)}`), 169, 30);
+  doc.text(ascii(`Category: ${categoryLabel || '-'}`), 169, 35);
+  doc.text(ascii(`Payment: ${purchase.paymentMode} | Status: ${purchase.status}`), 169, 40);
 
-  const infoX = 675;
-  text(infoX, 790, 'INVOICE DETAILS', 12, true);
-  text(infoX, 770, `Invoice No: ${purchase.poNumber}`, 10);
-  text(infoX, 753, `Invoice Date: ${formatDate(purchase.purchaseDate)}`, 10);
-  text(infoX, 736, `Category: ${categoryLabel || '-'}`, 10);
-  text(infoX, 719, `Payment: ${purchase.paymentMode}  |  Status: ${purchase.status}`, 9);
-  line(48, 706, PURCHASE_PAGE_WIDTH - 48, 706);
-
+  doc.setDrawColor(80);
+  doc.line(12, 45, 408, 45);
   const supplierAddress = [supplier?.address, supplier?.city].filter(Boolean).join(', ');
-  text(48, 691, 'BILL TO PARTY', 10, true);
-  text(48, 674, supplier?.name ?? purchase.supplierName, 11, true);
-  text(48, 657, `Supplier Name: ${purchase.supplierContactName || '-'}`, 9);
-  text(48, 640, `Address: ${supplierAddress || '-'}`, 9);
-  text(48, 623, `Phone: ${supplier?.phone || '-'}`, 9);
-  if (supplier?.gstNumber) text(48, 606, `GSTIN: ${supplier.gstNumber}`, 9);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(10);
+  doc.text('BILL TO PARTY', 12, 51);
+  doc.text(ascii(supplier?.name ?? purchase.supplierName), 12, 57);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8);
+  doc.text(ascii(`Supplier Name: ${purchase.supplierContactName || '-'}`), 12, 63);
+  doc.text(ascii(`Address: ${supplierAddress || '-'}`), 12, 68);
+  doc.text(ascii(`Phone: ${supplier?.phone || '-'}`), 12, 73);
+  if (supplier?.gstNumber) doc.text(ascii(`GSTIN: ${supplier.gstNumber}`), 12, 78);
 
-  text(625, 691, 'SHIP TO PARTY', 10, true);
-  text(625, 674, businessName, 11, true);
-  text(625, 657, `Address: ${COMPANY_DETAILS.address}`, 9);
-  text(625, 640, `Phone: ${COMPANY_DETAILS.contactNumbers[0]}`, 9);
-  text(625, 623, `GSTIN: ${COMPANY_DETAILS.gstNumber}`, 9);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(10);
+  doc.text('SHIP TO PARTY', 220, 51);
+  doc.text(ascii(businessName), 220, 57);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8);
+  doc.text(ascii(`Address: ${COMPANY_DETAILS.address}`), 220, 63);
+  doc.text(ascii(`Phone: ${COMPANY_DETAILS.contactNumbers[0]}`), 220, 68);
+  doc.text(ascii(`GSTIN: ${COMPANY_DETAILS.gstNumber}`), 220, 73);
 
-  const columns = [
-    { label: 'Material', width: 112, align: 'left' as const },
-    { label: 'Description', width: 202, align: 'left' as const },
-    { label: 'Qty', width: 44, align: 'right' as const },
-    { label: 'Packs', width: 48, align: 'right' as const },
-    { label: 'Volume (kg/lt.M)', width: 72, align: 'left' as const },
-    { label: 'Rate (INR / %)', width: 82, align: 'right' as const },
-    { label: 'Value', width: 69, align: 'right' as const },
-    { label: 'In Bill Disc', width: 79, align: 'right' as const },
-    { label: 'Cash Disc', width: 76, align: 'right' as const },
-    { label: 'Rebate Disc', width: 78, align: 'right' as const },
-    { label: 'Taxable Amount', width: 80, align: 'right' as const },
-    { label: 'Tax Amount', width: 72, align: 'right' as const },
-    { label: 'Total Amount', width: 81, align: 'right' as const },
+  const headers = [
+    'Material', 'Description', 'Qty', 'Packs', 'Volume (kg/lt.M)', 'Rate (INR / %)',
+    'Value', 'In Bill Disc', 'Cash Disc', 'Rebate Disc', 'Taxable Amount', 'Tax Amount', 'Total Amount',
   ];
-  const columnScale = tableWidth / columns.reduce((sum, column) => sum + column.width, 0);
-  const widths = columns.map((column) => column.width * columnScale);
-  const starts = widths.reduce<number[]>((result, width, index) => {
-    result.push(index === 0 ? margin : result[index - 1] + widths[index - 1]);
-    return result;
-  }, []);
-  const tableTop = 604;
-  const headerHeight = 36;
-  const rowHeight = 39;
-  rect(margin, tableTop - headerHeight, tableWidth, headerHeight, 0.9);
-  columns.forEach((column, index) => {
-    const maxChars = Math.max(5, Math.floor(widths[index] / 4));
-    const label = truncate(column.label, maxChars);
-    text(starts[index] + widths[index] / 2, tableTop - 22, label, 7.3, true, 'center');
+  autoTable(doc, {
+    head: [headers],
+    body: pageItems.map((cells) => cells.map((cell) => ascii(cell))),
+    startY: 84,
+    margin: { left: 11, right: 11, bottom: 22 },
+    tableWidth: 'auto',
+    styles: {
+      font: 'helvetica',
+      fontSize: 6.5,
+      cellPadding: 1.5,
+      overflow: 'linebreak',
+      minCellHeight: 13,
+    },
+    headStyles: { fillColor: [230, 230, 230], textColor: [25, 25, 25], fontStyle: 'bold', halign: 'center' },
+    columnStyles: {
+      2: { halign: 'right' },
+      3: { halign: 'right' },
+      5: { halign: 'right' },
+      6: { halign: 'right' },
+      7: { halign: 'right' },
+      8: { halign: 'right' },
+      9: { halign: 'right' },
+      10: { halign: 'right' },
+      11: { halign: 'right' },
+      12: { halign: 'right' },
+    },
+    didDrawPage: () => {
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(8);
+      if (!isLastPage) doc.text(ascii(`Continued - ${purchase.poNumber}`), 12, 288);
+      doc.text(`Page ${pageNumber} of ${totalPages}`, 408, 288, { align: 'right' });
+    },
   });
-  let rowTop = tableTop - headerHeight;
-  pageItems.forEach((cells) => {
-    const rowBottom = rowTop - rowHeight;
-    rect(margin, rowBottom, tableWidth, rowHeight);
-    cells.forEach((cell, index) => {
-      const align = columns[index].align;
-      const x = align === 'right' ? starts[index] + widths[index] - 4 : starts[index] + 4;
-      cell.split('\n').slice(0, 3).forEach((value, lineIndex) => {
-        text(x, rowTop - 11 - lineIndex * 11, truncate(value, Math.max(4, Math.floor((widths[index] - 8) / 4.2))), 7.1, lineIndex === 0, align);
-      });
-    });
-    rowTop = rowBottom;
-  });
-  let separatorX = margin;
-  widths.slice(0, -1).forEach((width) => {
-    separatorX += width;
-    line(separatorX, rowTop, separatorX, tableTop);
-  });
-
-  if (includeTotals) {
-    const rows = [
-      ['Value', totals.value],
-      ['In Bill Discount', totals.inBill],
-      ['Cash Discount', totals.cash],
-      ['Rebate Discount', totals.rebate],
-      ['Taxable Amount', totals.taxable],
-      ['Tax Amount', totals.tax],
-      ['Total Amount', totals.total],
-    ];
-    const summaryX = 755;
-    const summaryY = 54;
-    const summaryWidth = 390;
-    const summaryHeight = 116;
-    rect(summaryX, summaryY, summaryWidth, summaryHeight, 0.97);
-    rows.forEach(([label, value], index) => {
-      const y = summaryY + summaryHeight - 15 - index * 14;
-      text(summaryX + 10, y, label, 8, index === rows.length - 1);
-      text(summaryX + summaryWidth - 10, y, displayAmount(Number(value)), 8, index === rows.length - 1, 'right');
-    });
-  } else {
-    text(48, 87, `Continued - ${purchase.poNumber}`, 9, true);
-  }
-  text(PURCHASE_PAGE_WIDTH - 48, 40, `Page ${pageNumber} of ${totalPages}`, 8, false, 'right');
-  return commands.join('\n');
 }
 
 export function exportPurchasesToPdf(
   purchases: ApiPurchase[],
   suppliers: ApiSupplier[],
   products: ApiProduct[],
-  business: string
+  business: string,
+  filePrefix = 'purchase-orders'
 ) {
   if (!purchases.length) throw new Error('There are no records to export');
   const businessName = business.toLowerCase() === 'interiors'
     ? COMPANY_DETAILS.interiorsName
     : COMPANY_DETAILS.name;
   const prepared = purchases.map((purchase) => {
-    const totals = { value: 0, inBill: 0, cash: 0, rebate: 0, taxable: 0, tax: 0, total: 0 };
     const categories = new Set<string>();
     const items = (purchase.items ?? []).map((item) => {
       const quantity = Number(item.quantity) || 0;
@@ -507,13 +426,6 @@ export function exportPurchasesToPdf(
       const cashDiscount = afterSecondDiscount * cashDiscountPercent / 100 + cashDiscountAmount;
       const taxable = Math.max(0, afterSecondDiscount - cashDiscount);
       const tax = taxable * gstRate / 100;
-      totals.value += value;
-      totals.inBill += inBillDiscount;
-      totals.rebate += inBillDiscount2;
-      totals.cash += cashDiscount;
-      totals.taxable += taxable;
-      totals.tax += tax;
-      totals.total += taxable + tax;
       const product = products.find((entry) => entry.id === item.productId);
       if (product?.categoryName) categories.add(product.categoryName);
       const halfTaxRate = gstRate / 2;
@@ -541,7 +453,7 @@ export function exportPurchasesToPdf(
         ],
       };
     });
-    return { purchase, totals, items, categoryLabel: [...categories].join(', ') };
+    return { purchase, items, categoryLabel: [...categories].join(', ') };
   });
   const pages = prepared.flatMap((document) => {
     const rows = document.items.length
@@ -558,22 +470,20 @@ export function exportPurchasesToPdf(
       isLastPage: pageIndex === chunks.length - 1,
     }));
   });
-  const pageContents = pages.map((page, index) => renderPurchaseInvoicePage(
-    page.purchase,
-    suppliers.find((entry) => entry.id === page.purchase.supplierId),
-    page.pageItems.map((item) => item.cells),
-    page.pageIndex,
-    pages.length,
-    index + 1,
-    businessName,
-    page.categoryLabel,
-    page.totals,
-    page.isLastPage
-  ));
-  savePdfPages(
-    pageContents,
-    PURCHASE_PAGE_WIDTH,
-    PURCHASE_PAGE_HEIGHT,
-    `purchase-orders-${business}-${new Date().toISOString().replace(/[:.]/g, '-')}`
-  );
+  const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a3' });
+  pages.forEach((page, index) => {
+    if (index > 0) doc.addPage('a3', 'landscape');
+    drawPurchaseInvoicePage(
+      doc,
+      page.purchase,
+      suppliers.find((entry) => entry.id === page.purchase.supplierId),
+      page.pageItems.map((item) => item.cells),
+      pages.length,
+      index + 1,
+      businessName,
+      page.categoryLabel,
+      page.isLastPage
+    );
+  });
+  doc.save(`${safeFileName(`${filePrefix}-${business}-${new Date().toISOString().replace(/[:.]/g, '-')}`)}.pdf`);
 }

@@ -168,8 +168,6 @@ export default function Categories() {
               disabled={!!editing}
               options={[
                 { label: 'Paints', value: 'PAINTS' },
-                { label: 'Interiors', value: 'INTERIORS' },
-                { label: 'Both', value: 'BOTH' },
               ]}
             />
           </Form.Item>

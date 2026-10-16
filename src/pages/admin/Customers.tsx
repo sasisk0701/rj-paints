@@ -249,7 +249,6 @@ export default function Customers() {
                 disabled={!!editing}
                 options={[
                   { label: 'Paints',    value: 'PAINTS' },
-                  { label: 'Interiors', value: 'INTERIORS' },
                 ]}
               />
             </Form.Item>

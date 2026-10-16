@@ -14,10 +14,7 @@ interface BusinessContextType {
 const BusinessContext = createContext<BusinessContextType | undefined>(undefined);
 
 export const BusinessProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [currentBusiness, setCurrentBusinessState] = useState<BusinessType>(() => {
-    const saved = localStorage.getItem('rj_selected_business');
-    return (saved as BusinessType) || 'paints';
-  });
+  const [currentBusiness, setCurrentBusinessState] = useState<BusinessType>('paints');
 
   const [hasSelectedInitial, setHasSelectedInitial] = useState<boolean>(() => {
     return !!localStorage.getItem('rj_selected_business');

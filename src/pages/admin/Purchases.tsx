@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Plus, Pencil, Trash2, Download, Eye } from 'lucide-react';
-import { AutoComplete, Form, Input, InputNumber, Select, Switch, message } from 'antd';
+import { AutoComplete, DatePicker, Form, Input, InputNumber, Pagination, Select, Switch, message } from 'antd';
+import type { Dayjs } from 'dayjs';
 import { useNavigate } from 'react-router-dom';
 import { useBusiness } from '@/hooks/useBusiness.ts';
 import { purchaseService, supplierService, apiProductService, categoryService, type ApiPurchase, type ApiSupplier, type ApiProduct, type ApiCategory } from '@/services/api';
@@ -27,13 +28,6 @@ const COLUMNS: TableColumn[] = [
 const STATUS_OPTIONS = ['Pending', 'Paid', 'Partial', 'Overdue', 'Cancelled'];
 const PAYMENT_OPTIONS = ['Cash', 'UPI', 'Cheque', 'Bank Transfer', 'Credit'];
 const NEW_PRODUCT_VALUE = '__new_product__';
-const EXPORT_DATE_RANGES = [
-  { label: 'All', value: 'all' },
-  { label: 'Last 10 days', value: 10 },
-  { label: 'Last 30 days', value: 30 },
-  { label: 'Last 60 days', value: 60 },
-  { label: 'Last 90 days', value: 90 },
- ] as const;
 
 const STATUS_TONE: Record<string, Tone> = {
   Paid: 'success', Pending: 'warn', Partial: 'neutral', Overdue: 'danger', Cancelled: 'danger',
@@ -49,7 +43,8 @@ export default function Purchases() {
   const [loading, setLoading]           = useState(true);
   const [search, setSearch]             = useState('');
   const [statusFilter, setStatusFilter] = useState('');
-  const [exportDateRange, setExportDateRange] = useState<(typeof EXPORT_DATE_RANGES)[number]['value']>(10);
+  const [dateRange, setDateRange]       = useState<[Dayjs | null, Dayjs | null] | null>(null);
+  const [currentPage, setCurrentPage]   = useState(1);
   const [modalOpen, setModalOpen]       = useState(false);
   const [viewOpen, setViewOpen]         = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<ApiPurchase | null>(null);
@@ -76,7 +71,6 @@ export default function Purchases() {
       sellingPrice: product.sellingPrice ?? 0,
       unit: product.unit || '',
       minStock: product.minStock ?? 0,
-      openingStock: 0,
     });
   };
 
@@ -116,7 +110,7 @@ export default function Purchases() {
       business: toggle.toUpperCase(),
       items: [{
         productId: '', productName: '', quantity: 1, packs: 0, volume: '', purchasePrice: 0, hsn: '',
-        newProduct: { sellingPrice: 0, openingStock: 0, minStock: 0 },
+        newProduct: { sellingPrice: 0, minStock: 0 },
         inBillDiscountValue: 0, inBillDiscountType: 'amount',
         rebateDiscountValue: 0, rebateDiscountType: 'amount',
         cardDiscountValue: 0, cardDiscountType: 'amount',
@@ -158,7 +152,6 @@ export default function Purchases() {
             sellingPrice: product?.sellingPrice ?? 0,
             unit: product?.unit || '',
             minStock: product?.minStock ?? 0,
-            openingStock: 0,
           },
           inBillDiscountType: (i.inBillDiscountPercent ?? 0) > 0 ? 'percent' : 'amount',
           inBillDiscountValue: (i.inBillDiscountPercent ?? 0) > 0 ? i.inBillDiscountPercent : i.inBillDiscountAmount ?? 0,
@@ -170,7 +163,7 @@ export default function Purchases() {
         };
       }) ?? [{
         productId: '', quantity: 1, packs: 0, volume: '', purchasePrice: 0, hsn: '',
-        newProduct: { sellingPrice: 0, openingStock: 0, minStock: 0 },
+        newProduct: { sellingPrice: 0, minStock: 0 },
         inBillDiscountValue: 0, inBillDiscountType: 'amount',
         rebateDiscountValue: 0, rebateDiscountType: 'amount',
         cardDiscountValue: 0, cardDiscountType: 'amount',
@@ -231,7 +224,6 @@ export default function Purchases() {
                 sellingPrice: Number(item.newProduct.sellingPrice ?? prod?.sellingPrice ?? 0),
                 unit: item.newProduct.unit || prod?.unit || item.volume || 'Piece',
                 minStock: Number(item.newProduct.minStock ?? prod?.minStock ?? 0),
-                openingStock: Number(item.newProduct.openingStock ?? 0),
               },
             } : {}),
           };
@@ -274,27 +266,30 @@ export default function Purchases() {
     }
   };
 
-  const handleExport = async () => {
-    const cutoff = new Date();
-    cutoff.setHours(0, 0, 0, 0);
-    if (exportDateRange !== 'all') cutoff.setDate(cutoff.getDate() - (exportDateRange - 1));
-    const exportPurchases = purchases
-      .filter((purchase) => {
-        if (exportDateRange === 'all') return true;
-        const purchaseDate = new Date(`${purchase.purchaseDate.slice(0, 10)}T00:00:00`);
-        return !Number.isNaN(purchaseDate.getTime()) && purchaseDate >= cutoff;
-      })
-      .sort((a, b) => new Date(b.purchaseDate).getTime() - new Date(a.purchaseDate).getTime());
-    if (!exportPurchases.length) {
-      message.warning(exportDateRange === 'all'
-        ? 'No purchases to export'
-        : `No purchases found in the last ${exportDateRange} days`);
+  const filteredPurchases = useMemo(() => purchases.filter((purchase) => {
+    if (!dateRange?.[0] || !dateRange[1]) return true;
+    const purchaseDate = new Date(purchase.purchaseDate);
+    return !Number.isNaN(purchaseDate.getTime())
+      && purchaseDate >= dateRange[0].startOf('day').toDate()
+      && purchaseDate <= dateRange[1].endOf('day').toDate();
+  }), [purchases, dateRange]);
+
+  const pageCount = Math.max(1, Math.ceil(filteredPurchases.length / 10));
+  const visiblePurchases = filteredPurchases.slice((currentPage - 1) * 10, currentPage * 10);
+
+  useEffect(() => {
+    setCurrentPage((page) => Math.min(page, pageCount));
+  }, [pageCount]);
+
+  const handleExport = () => {
+    if (!filteredPurchases.length) {
+      message.warning('No purchases match the selected filters');
       return;
     }
     try {
       setExporting(true);
-      exportPurchasesToPdf(exportPurchases, suppliers, products, toggle);
-      message.success(`${exportPurchases.length} purchase${exportPurchases.length !== 1 ? 's' : ''} exported to PDF`);
+      exportPurchasesToPdf(filteredPurchases, suppliers, products, toggle);
+      message.success(`${filteredPurchases.length} purchase${filteredPurchases.length !== 1 ? 's' : ''} exported to PDF`);
     } catch (error) {
       console.error('Failed to export purchases:', error);
       message.error('Failed to export purchase PDF');
@@ -302,6 +297,15 @@ export default function Purchases() {
       setExporting(false);
     }
   };
+
+  const handleExportPurchase = useCallback((purchase: ApiPurchase) => {
+    try {
+      exportPurchasesToPdf([purchase], suppliers, products, toggle, `purchase-${purchase.poNumber}`);
+    } catch (error) {
+      console.error(`Failed to export purchase ${purchase.poNumber}:`, error);
+      message.error(`Failed to export ${purchase.poNumber} PDF`);
+    }
+  }, [suppliers, products, toggle]);
 
   const kpis = useMemo((): KpiItem[] => {
     const total     = purchases.reduce((s, p) => s + p.totalAmount, 0);
@@ -317,7 +321,7 @@ export default function Purchases() {
   }, [purchases]);
 
   const rows = useMemo(() =>
-    purchases.map((p) => ({
+    visiblePurchases.map((p) => ({
       id: p.id,
       po:       <span className="font-mono">{p.poNumber}</span>,
       date:     p.purchaseDate,
@@ -329,11 +333,12 @@ export default function Purchases() {
         <div className="flex gap-1">
           <Button variant="ghost" size="sm" icon={Eye} onClick={() => { setViewing(p); setViewOpen(true); }} />
           <Button variant="ghost" size="sm" icon={Pencil} onClick={() => openEdit(p)}>Edit</Button>
+          <Button variant="ghost" size="sm" icon={Download} title="Download purchase PDF" aria-label={`Download ${p.poNumber} as PDF`} onClick={() => handleExportPurchase(p)} />
           <Button variant="dangerGhost" size="sm" icon={Trash2} onClick={() => setDeleteTarget(p)} />
         </div>
       ),
     })),
-  [purchases]);
+  [visiblePurchases, handleExportPurchase]);
 
   return (
     <div>
@@ -345,18 +350,17 @@ export default function Purchases() {
             <Select
               placeholder="All Status" allowClear size="small" style={{ width: 140 }}
               value={statusFilter || undefined}
-              onChange={(v) => setStatusFilter(v ?? '')}
+              onChange={(v) => { setStatusFilter(v ?? ''); setCurrentPage(1); }}
               options={STATUS_OPTIONS.map((s) => ({ label: s, value: s }))}
             />
-            <Select
-              aria-label="Export date range"
-              size="small"
-              style={{ width: 150 }}
-              value={exportDateRange}
-              onChange={setExportDateRange}
-              options={EXPORT_DATE_RANGES.map((range) => ({ label: range.label, value: range.value }))}
+            <DatePicker.RangePicker
+              value={dateRange}
+              onChange={(range) => { setDateRange(range); setCurrentPage(1); }}
+              format="DD/MM/YYYY"
+              placeholder={['From date', 'To date']}
+              allowClear
             />
-            <SearchBox placeholder="Search PO, supplier…" value={search} onChange={(e) => setSearch(e.target.value)} />
+            <SearchBox placeholder="Search PO, supplier…" value={search} onChange={(e) => { setSearch(e.target.value); setCurrentPage(1); }} />
           </>
         }
         right={
@@ -369,17 +373,27 @@ export default function Purchases() {
         }
       />
 
-      {purchases.length === 0 && !loading ? (
+      {filteredPurchases.length === 0 && !loading ? (
         <div className="text-sm text-ink-3 py-12 text-center">
-          No purchases yet. Click <strong>New Purchase</strong> to create one.
+          No purchases match the selected filters.
         </div>
       ) : (
         <DataTable
           columns={COLUMNS} rows={rows}
           title="Purchase Orders"
-          subtitle={`${purchases.length} purchase${purchases.length !== 1 ? 's' : ''} · ${toggle === 'paints' ? 'Paints' : 'Interiors'} business`}
-          paginationText={`Showing ${purchases.length} purchase${purchases.length !== 1 ? 's' : ''}`}
+          subtitle={`${filteredPurchases.length} purchase${filteredPurchases.length !== 1 ? 's' : ''} · ${toggle === 'paints' ? 'Paints' : 'Interiors'} business`}
         />
+      )}
+      {filteredPurchases.length > 0 && (
+        <div className="flex justify-end py-4">
+          <Pagination
+            current={currentPage}
+            pageSize={10}
+            total={filteredPurchases.length}
+            showSizeChanger={false}
+            onChange={(page) => setCurrentPage(Math.min(page, pageCount))}
+          />
+        </div>
       )}
 
       {/* ── Create / Edit Modal ── */}
@@ -475,7 +489,7 @@ export default function Purchases() {
                   <span className="text-xs font-bold uppercase tracking-widest text-ink-3">Items</span>
                   <Button type="button" variant="ghost" size="sm" icon={Plus} onClick={() => add({
                     productId: '', productName: '', quantity: 1, packs: 0, volume: '', purchasePrice: 0, hsn: '',
-                    newProduct: { sellingPrice: 0, openingStock: 0, minStock: 0 },
+                    newProduct: { sellingPrice: 0, minStock: 0 },
                     inBillDiscountValue: 0, inBillDiscountType: 'amount',
                     rebateDiscountValue: 0, rebateDiscountType: 'amount',
                     cardDiscountValue: 0, cardDiscountType: 'amount',
@@ -506,7 +520,6 @@ export default function Purchases() {
                             const current = form.getFieldValue(['items', field.name, 'newProduct']) ?? {};
                             form.setFieldValue(['items', field.name, 'newProduct'], {
                               sellingPrice: 0,
-                              openingStock: 0,
                               minStock: 0,
                               ...current,
                               name,
@@ -558,8 +571,8 @@ export default function Purchases() {
                           <Form.Item name={[field.name, 'newProduct', 'color']} label="Color">
                             <Input placeholder="Color or variant" />
                           </Form.Item>
-                          <Form.Item name={[field.name, 'newProduct', 'sellingPrice']} label="Selling Price (₹)" rules={[{ required: true, message: 'Required' }]} className="md:col-span-2">
-                            <InputNumber min={0} className="w-full" />
+                          <Form.Item name={[field.name, 'newProduct', 'sellingPrice']} label="Selling Price (₹)" className="md:col-span-2">
+                            <InputNumber min={0} className="w-full" placeholder="0" />
                           </Form.Item>
                           <Form.Item name={[field.name, 'purchasePrice']} label="Purchase Price (₹)" rules={[{ required: true }]} className="md:col-span-2">
                             <InputNumber min={0} className="w-full" />
@@ -567,20 +580,17 @@ export default function Purchases() {
                           <Form.Item name={[field.name, 'newProduct', 'minStock']} label="Min Stock Alert">
                             <InputNumber min={0} className="w-full" />
                           </Form.Item>
-                          <Form.Item name={[field.name, 'newProduct', 'openingStock']} label="Opening Stock (optional)">
-                            <InputNumber min={0} className="w-full" />
-                          </Form.Item>
-                          <Form.Item name={[field.name, 'newProduct', 'description']} label="Description (optional)">
+                          <Form.Item name={[field.name, 'newProduct', 'description']} label="Description">
                             <Input placeholder="Short product description" />
                           </Form.Item>
                     </div>
-                    <Form.Item name={[field.name, 'quantity']} label="Qty" rules={[{ required: true }]} className="col-span-3 md:col-span-2">
+                    <Form.Item name={[field.name, 'quantity']} label="Qty" rules={[{ required: true }]} className="col-span-3 md:col-span-1">
                       <InputNumber min={1} className="w-full" />
                     </Form.Item>
-                    <Form.Item name={[field.name, 'packs']} label="Packs" className="col-span-3 md:col-span-2">
+                    <Form.Item name={[field.name, 'packs']} label="Packs" className="col-span-3 md:col-span-1">
                       <InputNumber min={0} className="w-full" />
                     </Form.Item>
-                    <Form.Item name={[field.name, 'volume']} label="Volume (kg/lt/M)" className="col-span-6 md:col-span-3">
+                    <Form.Item name={[field.name, 'volume']} label="Volume (kg/lt/M)" className="col-span-6 md:col-span-2">
                       <Input placeholder="e.g. 20 lt, 5 kg, 1 M" />
                     </Form.Item>
                     <Form.Item name={[field.name, 'inBillDiscountValue']} label="In-Bill Disc" className="col-span-6 md:col-span-2">
@@ -613,14 +623,14 @@ export default function Purchases() {
                         }
                       />
                     </Form.Item>
-                    <Form.Item name={[field.name, 'cardDiscountValue']} label="Card Disc" className="col-span-6 md:col-span-2">
+                    <Form.Item name={[field.name, 'cardDiscountValue']} label="Cash Disc" className="col-span-6 md:col-span-2">
                       <InputNumber
                         min={0}
                         className="w-full"
                         addonAfter={
                           <Form.Item name={[field.name, 'cardDiscountType']} noStyle>
                             <Select
-                              aria-label="Card discount unit"
+                              aria-label="Cash discount unit"
                               options={[{ label: '₹', value: 'amount' }, { label: '%', value: 'percent' }]}
                               style={{ width: 62 }}
                             />
@@ -631,7 +641,7 @@ export default function Purchases() {
                     <Form.Item name={[field.name, 'gstRate']} label="GST %" className="col-span-3 md:col-span-1">
                       <InputNumber min={0} max={28} className="w-full" />
                     </Form.Item>
-                    <div className="col-span-3 md:col-span-1 flex justify-end">
+                    <div className="col-span-3 md:col-span-1 flex items-end justify-center pb-6">
                       <Button type="button" variant="dangerGhost" size="sm" icon={Trash2} onClick={() => remove(field.name)} disabled={fields.length === 1} />
                     </div>
                   </div>

@@ -1,6 +1,7 @@
 import { useEffect, useState, useMemo, useCallback } from 'react';
 import { Plus, Download, Pencil, Trash2, ImagePlus, X, Eye } from 'lucide-react';
-import { Form, Input, Select, InputNumber, message } from 'antd';
+import { DatePicker, Form, Input, Select, InputNumber, Pagination, message } from 'antd';
+import type { Dayjs } from 'dayjs';
 import { useBusiness } from '@/hooks/useBusiness.ts';
 import { apiProductService, categoryService, resolveAssetUrl, ApiProduct, ApiCategory } from '@/services/api';
 import { Toolbar, SearchBox } from '@/components/common/Toolbar.tsx';
@@ -13,6 +14,7 @@ import { Badge } from '@/components/common/Badge';
 import { AppModal } from '@/components/common/AppModal';
 import { ConfirmDialog } from '@/components/common/ConfirmDialog';
 import type { TableColumn, Tone } from '@/types/types';
+import { exportProductsToPdf } from '@/utils/transactionPdfExport';
 
 const COLUMNS: TableColumn[] = [
   { key: 'image',    label: 'Image' },
@@ -54,6 +56,8 @@ export default function Products() {
   const [search, setSearch]             = useState('');
   const [catFilter, setCatFilter]       = useState('');
   const [statusFilter, setStatusFilter] = useState('');
+  const [dateRange, setDateRange]       = useState<[Dayjs | null, Dayjs | null] | null>(null);
+  const [currentPage, setCurrentPage]   = useState(1);
   const [modalOpen, setModalOpen]       = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<ApiProduct | null>(null);
   const [purchaseHistoryProduct, setPurchaseHistoryProduct] = useState<ApiProduct | null>(null);
@@ -106,7 +110,7 @@ export default function Products() {
   const openAdd = () => {
     setEditing(null);
     form.resetFields();
-    form.setFieldsValue({ business: toggle.toUpperCase(), gstRate: 18, stock: 1, minStock: 0 });
+    form.setFieldsValue({ business: toggle.toUpperCase(), gstRate: 18, stock: 0, minStock: 0 });
     resetImageState();
     setModalOpen(true);
   };
@@ -117,7 +121,7 @@ export default function Products() {
       name: p.name, categoryId: p.categoryId, brand: p.brand, color: p.color ?? '', hsn: p.hsn ?? '',
       description: p.description ?? '',
       purchasePrice: p.purchasePrice, sellingPrice: p.sellingPrice,
-      gstRate: p.gstRate, stock: p.stock, minStock: p.minStock,
+      gstRate: p.gstRate, minStock: p.minStock,
       unit: p.unit, business: p.business,
     });
     resetImageState(resolveAssetUrl(p.image));
@@ -202,35 +206,50 @@ export default function Products() {
   };
 
   const handleExport = () => {
-    if (!products.length) { message.warning('No products to export'); return; }
-    const header = 'Name,Category,HSN Code,Color,Brand,Unit,Purchase Price,Selling Price,GST%,Stock,Min Stock,Status\n';
-    const csv = products.map((p) =>
-      `"${p.name}","${p.categoryName}","${p.hsn ?? ''}","${p.color ?? ''}","${p.brand}","${p.unit}",${p.purchasePrice},${p.sellingPrice},${p.gstRate},${p.stock},${p.minStock},"${p.status}"`
-    ).join('\n');
-    const blob = new Blob([header + csv], { type: 'text/csv' });
-    const url  = URL.createObjectURL(blob);
-    const a    = document.createElement('a');
-    a.href = url;
-    a.download = `products-${toggle}-${new Date().toISOString().split('T')[0]}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
-    message.success('Products exported');
+    try {
+      exportProductsToPdf(filteredProducts, toggle);
+      message.success('Products exported as PDF');
+    } catch (error) {
+      message.warning(error instanceof Error ? error.message : 'Failed to export products');
+    }
   };
 
+  const handleExportProduct = (product: ApiProduct) => {
+    try {
+      exportProductsToPdf([product], toggle, `product-${product.name}`);
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : `Failed to export ${product.name}`);
+    }
+  };
+
+  const filteredProducts = useMemo(() => products.filter((product) => {
+    if (!dateRange?.[0] || !dateRange[1]) return true;
+    const createdAt = new Date(product.createdAt);
+    return createdAt >= dateRange[0].startOf('day').toDate()
+      && createdAt <= dateRange[1].endOf('day').toDate();
+  }), [products, dateRange]);
+
+  const pageCount = Math.max(1, Math.ceil(filteredProducts.length / 10));
+  const visibleProducts = filteredProducts.slice((currentPage - 1) * 10, currentPage * 10);
+
+  useEffect(() => {
+    setCurrentPage((page) => Math.min(page, pageCount));
+  }, [pageCount]);
+
   const kpis = useMemo(() => {
-    const inStock  = products.filter((p) => p.status === 'In Stock').length;
-    const lowStock = products.filter((p) => p.status === 'Low Stock').length;
-    const outStock = products.filter((p) => p.status === 'Out of Stock').length;
+    const inStock  = filteredProducts.filter((p) => p.status === 'In Stock').length;
+    const lowStock = filteredProducts.filter((p) => p.stock > 0 && p.stock <= p.minStock).length;
+    const outStock = filteredProducts.filter((p) => p.status === 'Out of Stock').length;
     return [
-      { label: 'Total Products', value: String(products.length), deltaTone: 'neutral' as const },
+      { label: 'Total Products', value: String(filteredProducts.length), deltaTone: 'neutral' as const },
       { label: 'In Stock',       value: String(inStock),  deltaTone: 'up'   as const },
       { label: 'Low Stock',      value: String(lowStock), deltaTone: 'down' as const },
       { label: 'Out of Stock',   value: String(outStock), deltaTone: 'down' as const },
     ];
-  }, [products]);
+  }, [filteredProducts]);
 
   const rows = useMemo(() =>
-    products.map((p) => ({
+    visibleProducts.map((p) => ({
       id: p.id,
       image: p.image ? (
         <img
@@ -269,11 +288,12 @@ export default function Products() {
         <div className="flex gap-1">
           <Button variant="ghost" size="sm" icon={Eye} onClick={() => setPurchaseHistoryProduct(p)}>Purchases</Button>
           <Button variant="ghost" size="sm" icon={Pencil} onClick={() => openEdit(p)}>Edit</Button>
+          <Button variant="ghost" size="sm" icon={Download} title="Download product PDF" aria-label={`Download ${p.name} as PDF`} onClick={() => handleExportProduct(p)} />
           <Button variant="dangerGhost" size="sm" icon={Trash2} onClick={() => setDeleteTarget(p)} />
         </div>
       ),
     })),
-  [products]);
+  [visibleProducts, handleExportProduct]);
 
   return (
     <div>
@@ -286,43 +306,60 @@ export default function Products() {
               placeholder="All Categories"
               allowClear size="small" style={{ width: 180 }}
               value={catFilter || undefined}
-              onChange={(v) => setCatFilter(v ?? '')}
+              onChange={(v) => { setCatFilter(v ?? ''); setCurrentPage(1); }}
               options={categories.map((c) => ({ label: c.name, value: c.id }))}
             />
             <Select
               placeholder="All Status"
               allowClear size="small" style={{ width: 140 }}
               value={statusFilter || undefined}
-              onChange={(v) => setStatusFilter(v ?? '')}
-              options={['In Stock', 'Low Stock', 'Out of Stock'].map((s) => ({ label: s, value: s }))}
+              onChange={(v) => { setStatusFilter(v ?? ''); setCurrentPage(1); }}
+              options={['In Stock', 'Out of Stock'].map((s) => ({ label: s, value: s }))}
+            />
+            <DatePicker.RangePicker
+              value={dateRange}
+              onChange={(range) => { setDateRange(range); setCurrentPage(1); }}
+              format="DD/MM/YYYY"
+              placeholder={['From date', 'To date']}
+              allowClear
             />
             <SearchBox
               placeholder="Search name, color, brand…"
               value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              onChange={(e) => { setSearch(e.target.value); setCurrentPage(1); }}
             />
           </>
         }
         right={
           <>
-            <Button variant="ghost" size="sm" icon={Download} onClick={handleExport}>Export</Button>
+            <Button variant="ghost" size="sm" icon={Download} onClick={handleExport}>Export PDF</Button>
             <Button variant="primary" size="sm" icon={Plus} onClick={openAdd}>Add Product</Button>
           </>
         }
       />
 
-      {products.length === 0 && !loading ? (
+      {filteredProducts.length === 0 && !loading ? (
         <div className="text-sm text-ink-3 py-12 text-center">
-          No products yet. Click <strong>Add Product</strong> to create one.
+          No products match the selected filters.
         </div>
       ) : (
         <DataTable
           columns={COLUMNS}
           rows={rows}
           title="Product Catalog"
-          subtitle={`${products.length} product${products.length !== 1 ? 's' : ''} · ${toggle === 'paints' ? 'Paints' : 'Interiors'} business`}
-          paginationText={`Showing ${products.length} product${products.length !== 1 ? 's' : ''}`}
+          subtitle={`${filteredProducts.length} product${filteredProducts.length !== 1 ? 's' : ''} · ${toggle === 'paints' ? 'Paints' : 'Interiors'} business`}
         />
+      )}
+      {filteredProducts.length > 0 && (
+        <div className="flex justify-end py-4">
+          <Pagination
+            current={currentPage}
+            pageSize={10}
+            total={filteredProducts.length}
+            showSizeChanger={false}
+            onChange={(page) => setCurrentPage(Math.min(page, pageCount))}
+          />
+        </div>
       )}
 
       <AppModal
@@ -404,7 +441,7 @@ export default function Products() {
               <InputNumber min={0} style={{ width: '100%' }} placeholder="0" />
             </Form.Item>
 
-            <Form.Item name="sellingPrice" label="Selling Price (₹)" rules={[{ required: true, message: 'Required' }]}>
+            <Form.Item name="sellingPrice" label="Selling Price (₹)">
               <InputNumber min={0} style={{ width: '100%' }} placeholder="0" />
             </Form.Item>
 
@@ -416,9 +453,11 @@ export default function Products() {
               <Input placeholder="e.g. Liter, Kg, Piece" />
             </Form.Item>
 
-            <Form.Item name="stock" label="Opening Stock">
-              <InputNumber min={0} style={{ width: '100%' }} placeholder="1" />
-            </Form.Item>
+            {!editing && (
+              <Form.Item name="stock" label="Stock">
+                <InputNumber min={0} precision={0} step={1} style={{ width: '100%' }} placeholder="0" />
+              </Form.Item>
+            )}
 
             <Form.Item name="minStock" label="Min Stock Alert">
               <InputNumber min={0} style={{ width: '100%' }} placeholder="0" />
@@ -429,7 +468,6 @@ export default function Products() {
                 disabled={!!editing}
                 options={[
                   { label: 'Paints',    value: 'PAINTS' },
-                  { label: 'Interiors', value: 'INTERIORS' },
                 ]}
               />
             </Form.Item>
@@ -461,7 +499,7 @@ export default function Products() {
               </div>
             </Form.Item>
 
-            <Form.Item name="description" label="Description (optional)" className="col-span-2">
+            <Form.Item name="description" label="Description" className="col-span-2">
               <Input.TextArea rows={2} placeholder="Short product description…" />
             </Form.Item>
           </div>

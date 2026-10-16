@@ -2,15 +2,15 @@ import React from 'react';
 import { motion } from 'framer-motion';
 import { useBusiness } from '../../context/BusinessContext';
 import { useNavigate } from 'react-router-dom';
-import { Paintbrush, Building2, ArrowRight, Phone, ShieldCheck, Sparkles, CheckCircle2 } from 'lucide-react';
+import { Paintbrush, ArrowRight, Phone, ShieldCheck, Sparkles, CheckCircle2 } from 'lucide-react';
 import logo from '../../assets/logo.png';
 
 export const GatewayPage: React.FC = () => {
   const { setBusiness } = useBusiness();
   const navigate = useNavigate();
 
-  const handleChoose = (type: 'paints' | 'interiors') => {
-    setBusiness(type);
+  const handleChoose = () => {
+    setBusiness('paints');
     navigate('/');
   };
 
@@ -61,15 +61,15 @@ export const GatewayPage: React.FC = () => {
           </div>
 
           <h1 className="text-3xl sm:text-5xl lg:text-6xl font-black text-white leading-tight">
-            Which Service Do You <span className="rainbow-text">Require Today?</span>
+            Welcome to <span className="rainbow-text">RJ Paints & Hardwares</span>
           </h1>
           <p className="text-slate-400 text-base sm:text-lg max-w-xl mx-auto leading-relaxed">
-            Select your preferred service below to tailor your entire experience, products & pricing.
+            Browse our paints, hardware, and related services.
           </p>
         </motion.div>
 
         {/* Dual Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 w-full">
+        <div className="grid grid-cols-1 gap-8 w-full max-w-xl">
 
           {/* Paints Card */}
           <motion.div
@@ -78,7 +78,7 @@ export const GatewayPage: React.FC = () => {
             transition={{ duration: 0.6, delay: 0.2 }}
             whileHover={{ y: -10, scale: 1.02 }}
             whileTap={{ scale: 0.98 }}
-            onClick={() => handleChoose('paints')}
+            onClick={handleChoose}
             className="cursor-pointer rounded-3xl p-8 relative overflow-hidden border-2 transition-all group"
             style={{ background: 'linear-gradient(135deg, #060E1F 0%, #0A1929 100%)', borderColor: 'rgba(96,165,250,0.15)' }}
           >
@@ -124,56 +124,6 @@ export const GatewayPage: React.FC = () => {
             </div>
           </motion.div>
 
-          {/* Interiors Card */}
-          <motion.div
-            initial={{ opacity: 0, x: 40 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ duration: 0.6, delay: 0.3 }}
-            whileHover={{ y: -10, scale: 1.02 }}
-            whileTap={{ scale: 0.98 }}
-            onClick={() => handleChoose('interiors')}
-            className="cursor-pointer rounded-3xl p-8 relative overflow-hidden border-2 transition-all group"
-            style={{ background: 'linear-gradient(135deg, #0A0500 0%, #1A0A00 100%)', borderColor: 'rgba(251,191,36,0.15)' }}
-          >
-            <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-500"
-              style={{ background: 'radial-gradient(ellipse at top right, rgba(217,119,6,0.2) 0%, transparent 70%)' }} />
-
-            <div className="relative z-10 space-y-6">
-              <div className="w-16 h-16 rounded-2xl flex items-center justify-center shadow-xl"
-                style={{ background: 'linear-gradient(135deg, #D97706 0%, #F59E0B 100%)', boxShadow: '0 12px 40px rgba(217,119,6,0.5)' }}>
-                <Building2 className="w-8 h-8 text-slate-900" />
-              </div>
-
-              <div>
-                <span className="text-xs font-extrabold text-amber-400 uppercase tracking-widest block mb-1">
-                  Turnkey Interior & Civil
-                </span>
-                <h2 className="text-2xl font-black text-white">Styleo Interiors & Construction</h2>
-              </div>
-
-              <p className="text-slate-400 text-sm leading-relaxed">
-                Custom acrylic modular kitchens, Gyproc false ceilings, sliding wardrobes, 3D photorealistic interior design & complete residential civil building works.
-              </p>
-
-              <ul className="space-y-2">
-                {['Before & After Renovation Slider', '3D Photorealistic Design First', 'Turnkey Civil Construction'].map((f, i) => (
-                  <li key={i} className="flex items-center gap-2 text-xs text-slate-300">
-                    <CheckCircle2 className="w-3.5 h-3.5 text-amber-400 flex-shrink-0" />
-                    {f}
-                  </li>
-                ))}
-              </ul>
-
-              <div className="flex items-center justify-between pt-4 border-t" style={{ borderColor: 'rgba(255,255,255,0.06)' }}>
-                <span className="text-amber-400 font-bold text-sm flex items-center gap-2 group-hover:gap-3 transition-all">
-                  Explore Interiors <ArrowRight className="w-4 h-4" />
-                </span>
-                <div className="w-9 h-9 rounded-xl bg-amber-600/20 flex items-center justify-center group-hover:bg-amber-600 transition-colors">
-                  <ArrowRight className="w-4 h-4 text-amber-400 group-hover:text-slate-900" />
-                </div>
-              </div>
-            </div>
-          </motion.div>
         </div>
       </div>
 

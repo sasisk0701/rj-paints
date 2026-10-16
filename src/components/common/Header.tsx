@@ -4,12 +4,11 @@ import logo from '../../assets/logo.png';
 import styleoLogo from '../../assets/styleoLogo.png';
 import { useBusiness } from '../../context/BusinessContext';
 import { useAuth } from '../../context/AuthContext';
-import { BusinessSwitcherModal } from './BusinessSwitcherModal';
-import { Phone, RefreshCw, Menu, X, Lock, ChevronDown } from 'lucide-react';
+import { Phone, Menu, X, Lock } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 export const Header: React.FC = () => {
-  const { currentBusiness, toggleBusiness, isModalOpen, setIsModalOpen } = useBusiness();
+  const { currentBusiness } = useBusiness();
   const { isAuthenticated } = useAuth();
   const location = useLocation();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -134,26 +133,6 @@ export const Header: React.FC = () => {
 
           {/* Right Actions */}
           <div className="hidden sm:flex items-center gap-3 flex-shrink-0">
-            {/* Business Switcher */}
-            <button
-              onClick={toggleBusiness}
-              className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-extrabold transition-all duration-300 border-2"
-              style={isPaints ? {
-                background: '#0A1929',
-                color: '#FCD34D',
-                borderColor: '#1E3A5F',
-              } : {
-                background: '#F0F4FF',
-                color: '#0F3D87',
-                borderColor: '#BFDBFE',
-              }}
-            >
-              <RefreshCw className="w-3.5 h-3.5" />
-              <span className="hidden md:inline">
-                {isPaints ? '→ Interiors' : '→ Paints Store'}
-              </span>
-            </button>
-
             {/* Primary CTA */}
             {isPaints ? (
               <Link
@@ -212,23 +191,11 @@ export const Header: React.FC = () => {
                     {link.name}
                   </Link>
                 ))}
-                <div className="pt-3 border-t border-slate-100">
-                  <button
-                    onClick={() => { toggleBusiness(); setMobileMenuOpen(false); }}
-                    className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-bold text-white"
-                    style={{ background: isPaints ? '#0A1929' : 'linear-gradient(135deg, #0F3D87, #1D5BBF)' }}
-                  >
-                    <RefreshCw className="w-4 h-4" />
-                    Switch to {isPaints ? 'Styleo Interiors' : 'RJ Paints Store'}
-                  </button>
-                </div>
               </div>
             </motion.div>
           )}
         </AnimatePresence>
       </header>
-
-      <BusinessSwitcherModal open={isModalOpen} onClose={() => setIsModalOpen(false)} />
     </>
   );
 };

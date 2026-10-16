@@ -594,8 +594,6 @@ export default function StaffMaintenance() {
               <Select
                 options={[
                   { label: 'Paints', value: 'PAINTS' },
-                  { label: 'Interiors', value: 'INTERIORS' },
-                  { label: 'Both', value: 'BOTH' },
                 ]}
               />
             </Form.Item>
