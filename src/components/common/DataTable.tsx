@@ -73,7 +73,8 @@ function DataTableBase({
           key={col.key}
           className={clsx(
             "text-left text-[11px] uppercase tracking-wide font-bold text-ink-3 px-3.5 py-2.5 border-b border-border bg-surface-2 whitespace-nowrap",
-            col.align === "num" && "text-right"
+            col.align === "num" && "text-right",
+            col.align === "center" && "text-center"
           )}
         >
           {col.label}
@@ -135,7 +136,8 @@ function DataTableBase({
                       key={col.key}
                       className={clsx(
                         "px-3.5 py-3 border-b border-border align-middle text-[13px] text-ink last:border-b-0",
-                        col.align === "num" && "text-right font-mono"
+                        col.align === "num" && "text-right font-mono",
+                        col.align === "center" && "text-center font-mono"
                       )}
                     >
                       {row[col.key]}

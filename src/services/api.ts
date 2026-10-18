@@ -417,6 +417,7 @@ export const inventoryService = {
 // ─── Purchases (API-backed) ─────────────────────────────────────────────────
 export interface ApiPurchase {
   id: string; poNumber: string; supplierName: string; supplierId?: string | null;
+  invoiceNo?: string | null;
   supplierContactName?: string | null;
   purchaseDate: string; paymentMode: string; hsn: string; status: string;
   received: boolean;

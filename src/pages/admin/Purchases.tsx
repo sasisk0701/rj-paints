@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Plus, Pencil, Trash2, Download, Eye } from 'lucide-react';
 import { AutoComplete, DatePicker, Form, Input, InputNumber, Pagination, Select, Switch, message } from 'antd';
+import type { FormInstance } from 'antd';
 import type { Dayjs } from 'dayjs';
 import { useNavigate } from 'react-router-dom';
 import { useBusiness } from '@/hooks/useBusiness.ts';
@@ -28,10 +29,101 @@ const COLUMNS: TableColumn[] = [
 const STATUS_OPTIONS = ['Pending', 'Paid', 'Partial', 'Overdue', 'Cancelled'];
 const PAYMENT_OPTIONS = ['Cash', 'UPI', 'Cheque', 'Bank Transfer', 'Credit'];
 const NEW_PRODUCT_VALUE = '__new_product__';
+const VOLUME_UNITS = [
+  { label: 'kg', value: 'kg' },
+  { label: 'L', value: 'L' },
+  { label: 'M', value: 'M' },
+];
+
+type VolumeUnit = 'kg' | 'L' | 'M';
+
+function normalizeVolumeUnit(value?: string): VolumeUnit | undefined {
+  const unit = value?.trim().toLowerCase();
+  if (unit === 'kg' || unit?.startsWith('kilogram')) return 'kg';
+  if (unit === 'l' || unit === 'lt' || unit?.startsWith('lit')) return 'L';
+  if (unit === 'm' || unit?.startsWith('met')) return 'M';
+  return undefined;
+}
+
+function parsePurchaseVolume(value?: string) {
+  const match = value?.trim().match(/^(\d+(?:\.\d+)?)\s*(.*?)$/);
+  if (!match) return { amount: undefined, unit: undefined, legacy: value ?? '' };
+  return {
+    amount: Number(match[1]),
+    unit: normalizeVolumeUnit(match[2]),
+    legacy: normalizeVolumeUnit(match[2]) ? '' : value ?? '',
+  };
+}
+
+function formatPurchaseTotalVolume(value: string, quantity: number) {
+  const volume = parsePurchaseVolume(value);
+  if (volume.amount === undefined || !Number.isFinite(quantity)) return volume.legacy || '—';
+  const total = volume.amount + quantity;
+  return `${Number(total.toFixed(3)).toLocaleString('en-IN')}${volume.unit ? ` ${volume.unit}` : ''}`;
+}
 
 const STATUS_TONE: Record<string, Tone> = {
   Paid: 'success', Pending: 'warn', Partial: 'neutral', Overdue: 'danger', Cancelled: 'danger',
 };
+
+function PurchaseVolumeField({ fieldIndex, form }: { fieldIndex: number; form: FormInstance }) {
+  const volumeUnit = Form.useWatch(['items', fieldIndex, 'volumeUnit'], form) as VolumeUnit | undefined;
+
+  return (
+    <Form.Item label="Volume" className="col-span-6 md:col-span-3">
+      <Form.Item name={['items', fieldIndex, 'volume']} noStyle>
+        <Input
+          inputMode="decimal"
+          aria-label="Volume amount"
+          placeholder="Enter volume"
+          addonAfter={
+            <Select
+              aria-label="Volume unit"
+              value={volumeUnit ?? 'kg'}
+              onChange={(unit: VolumeUnit) => form.setFieldValue(['items', fieldIndex, 'volumeUnit'], unit)}
+              options={VOLUME_UNITS}
+              style={{ width: 72 }}
+            />
+          }
+        />
+      </Form.Item>
+    </Form.Item>
+  );
+}
+
+function PurchaseTotalVolume({ fieldIndex, form }: { fieldIndex: number; form: FormInstance }) {
+  return (
+    <Form.Item
+      label="Total Volume"
+      className="col-span-6 md:col-span-3"
+      shouldUpdate={(previous, current) =>
+        previous.items?.[fieldIndex]?.quantity !== current.items?.[fieldIndex]?.quantity
+        || previous.items?.[fieldIndex]?.volume !== current.items?.[fieldIndex]?.volume
+        || previous.items?.[fieldIndex]?.volumeUnit !== current.items?.[fieldIndex]?.volumeUnit
+      }
+    >
+      {() => {
+        const item = form.getFieldValue(['items', fieldIndex]) ?? {};
+        const quantity = Number(item.quantity);
+        const volume = Number(item.volume);
+        const total = quantity + volume;
+        const value = item.quantity !== undefined && item.quantity !== '' &&
+          item.volume !== undefined && item.volume !== '' && Number.isFinite(total)
+          ? `${Number(total.toFixed(3)).toLocaleString('en-IN')} ${item.volumeUnit || 'kg'}`
+          : '';
+
+        return (
+          <Input
+            aria-label="Total volume (quantity plus volume)"
+            value={value}
+            placeholder="Qty + Volume"
+            readOnly
+          />
+        );
+      }}
+    </Form.Item>
+  );
+}
 
 export default function Purchases() {
   const { toggle } = useBusiness();
@@ -61,7 +153,9 @@ export default function Purchases() {
     form.setFieldValue(['items', index, 'purchasePrice'], product.purchasePrice);
     form.setFieldValue(['items', index, 'gstRate'], product.gstRate);
     form.setFieldValue(['items', index, 'hsn'], product.hsn ?? '');
-    form.setFieldValue(['items', index, 'volume'], product.unit ?? '');
+    form.setFieldValue(['items', index, 'volume'], undefined);
+    form.setFieldValue(['items', index, 'volumeUnit'], normalizeVolumeUnit(product.unit) ?? 'kg');
+    form.setFieldValue(['items', index, 'legacyVolume'], '');
     form.setFieldValue(['items', index, 'newProduct'], {
       name: product.name,
       categoryId: product.categoryId || '',
@@ -109,7 +203,7 @@ export default function Purchases() {
       received: true,
       business: toggle.toUpperCase(),
       items: [{
-        productId: '', productName: '', quantity: 1, packs: 0, volume: '', purchasePrice: 0, hsn: '',
+        productId: '', productName: '', quantity: 1, packs: 0,         volume: undefined, volumeUnit: 'kg', legacyVolume: '', purchasePrice: 0, hsn: '',
         newProduct: { sellingPrice: 0, minStock: 0 },
         inBillDiscountValue: 0, inBillDiscountType: 'amount',
         rebateDiscountValue: 0, rebateDiscountType: 'amount',
@@ -135,12 +229,15 @@ export default function Purchases() {
       business: p.business,
       items: p.items?.map((i) => {
         const product = products.find((entry) => entry.id === i.productId);
+        const storedVolume = parsePurchaseVolume(i.volume);
         return {
           productId: i.productId,
           productName: i.productName,
           quantity: i.quantity,
           packs: i.packs ?? 0,
-          volume: i.volume || product?.unit || '',
+          volume: storedVolume.amount,
+          volumeUnit: storedVolume.unit ?? normalizeVolumeUnit(product?.unit) ?? 'kg',
+          legacyVolume: storedVolume.legacy,
           purchasePrice: i.purchasePrice,
           hsn: i.hsn || product?.hsn || '',
           newProduct: {
@@ -162,7 +259,7 @@ export default function Purchases() {
           gstRate: i.gstRate,
         };
       }) ?? [{
-        productId: '', quantity: 1, packs: 0, volume: '', purchasePrice: 0, hsn: '',
+        productId: '', quantity: 1, packs: 0, volume: undefined, volumeUnit: 'kg', legacyVolume: '', purchasePrice: 0, hsn: '',
         newProduct: { sellingPrice: 0, minStock: 0 },
         inBillDiscountValue: 0, inBillDiscountType: 'amount',
         rebateDiscountValue: 0, rebateDiscountType: 'amount',
@@ -197,7 +294,9 @@ export default function Purchases() {
             productName: prod?.name ?? item.newProduct?.name ?? '',
             quantity: Number(item.quantity),
             packs: Number(item.packs ?? 0),
-            volume: item.volume || prod?.unit || item.newProduct?.unit || '',
+            volume: item.volume !== undefined && item.volume !== null && item.volume !== ''
+              ? `${Number(item.volume)} ${item.volumeUnit || 'kg'}`
+              : item.legacyVolume || '',
             purchasePrice: Number(item.purchasePrice),
             inBillDiscountPercent,
             inBillDiscountAmount,
@@ -488,7 +587,7 @@ export default function Purchases() {
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-bold uppercase tracking-widest text-ink-3">Items</span>
                   <Button type="button" variant="ghost" size="sm" icon={Plus} onClick={() => add({
-                    productId: '', productName: '', quantity: 1, packs: 0, volume: '', purchasePrice: 0, hsn: '',
+                    productId: '', productName: '', quantity: 1, packs: 0, volume: undefined, volumeUnit: 'kg', legacyVolume: '', purchasePrice: 0, hsn: '',
                     newProduct: { sellingPrice: 0, minStock: 0 },
                     inBillDiscountValue: 0, inBillDiscountType: 'amount',
                     rebateDiscountValue: 0, rebateDiscountType: 'amount',
@@ -584,16 +683,15 @@ export default function Purchases() {
                             <Input placeholder="Short product description" />
                           </Form.Item>
                     </div>
-                    <Form.Item name={[field.name, 'quantity']} label="Qty" rules={[{ required: true }]} className="col-span-3 md:col-span-1">
+                    <Form.Item name={[field.name, 'quantity']} label="Qty" rules={[{ required: true }]} className="col-span-6 md:col-span-3">
                       <InputNumber min={1} className="w-full" />
                     </Form.Item>
-                    <Form.Item name={[field.name, 'packs']} label="Packs" className="col-span-3 md:col-span-1">
+                    <Form.Item name={[field.name, 'packs']} label="Packs" className="col-span-6 md:col-span-3">
                       <InputNumber min={0} className="w-full" />
                     </Form.Item>
-                    <Form.Item name={[field.name, 'volume']} label="Volume (kg/lt/M)" className="col-span-6 md:col-span-2">
-                      <Input placeholder="e.g. 20 lt, 5 kg, 1 M" />
-                    </Form.Item>
-                    <Form.Item name={[field.name, 'inBillDiscountValue']} label="In-Bill Disc" className="col-span-6 md:col-span-2">
+                    <PurchaseVolumeField fieldIndex={field.name} form={form} />
+                    <PurchaseTotalVolume fieldIndex={field.name} form={form} />
+                    <Form.Item name={[field.name, 'inBillDiscountValue']} label="In-Bill Disc" className="col-span-6 md:col-span-3">
                       <InputNumber
                         min={0}
                         className="w-full"
@@ -608,7 +706,7 @@ export default function Purchases() {
                         }
                       />
                     </Form.Item>
-                    <Form.Item name={[field.name, 'rebateDiscountValue']} label="Rebate Disc" className="col-span-6 md:col-span-2">
+                    <Form.Item name={[field.name, 'rebateDiscountValue']} label="Rebate Disc" className="col-span-6 md:col-span-3">
                       <InputNumber
                         min={0}
                         className="w-full"
@@ -623,7 +721,7 @@ export default function Purchases() {
                         }
                       />
                     </Form.Item>
-                    <Form.Item name={[field.name, 'cardDiscountValue']} label="Cash Disc" className="col-span-6 md:col-span-2">
+                    <Form.Item name={[field.name, 'cardDiscountValue']} label="Cash Disc" className="col-span-6 md:col-span-3">
                       <InputNumber
                         min={0}
                         className="w-full"
@@ -638,7 +736,7 @@ export default function Purchases() {
                         }
                       />
                     </Form.Item>
-                    <Form.Item name={[field.name, 'gstRate']} label="GST %" className="col-span-3 md:col-span-1">
+                    <Form.Item name={[field.name, 'gstRate']} label="GST %" className="col-span-3 md:col-span-2">
                       <InputNumber min={0} max={28} className="w-full" />
                     </Form.Item>
                     <div className="col-span-3 md:col-span-1 flex items-end justify-center pb-6">
@@ -672,28 +770,33 @@ export default function Purchases() {
               <div><span className="text-ink-3 text-xs">GST Amount</span><div className="font-medium">₹{viewing.gstAmount.toLocaleString('en-IN')}</div></div>
             </div>
             {viewing.items && viewing.items.length > 0 && (
-              <table className="w-full text-sm border-collapse">
-                <thead>
-                  <tr className="bg-surface-2">
-                    {['Product', 'HSN', 'Qty', 'Price', 'Cash Disc %', 'GST%', 'Amount'].map((h) => (
-                      <th key={h} className="text-left text-xs font-bold text-ink-3 px-3 py-2 border-b border-border">{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {viewing.items.map((item) => (
-                    <tr key={item.id} className="border-b border-border">
-                      <td className="px-3 py-2">{item.productName}</td>
-                      <td className="px-3 py-2">{item.hsn || '—'}</td>
-                      <td className="px-3 py-2">{item.quantity}</td>
-                      <td className="px-3 py-2">₹{item.purchasePrice.toLocaleString('en-IN')}</td>
-                      <td className="px-3 py-2">{item.cashDiscountPercent ?? 0}%</td>
-                      <td className="px-3 py-2">{item.gstRate}%</td>
-                      <td className="px-3 py-2 font-semibold">₹{item.amount.toLocaleString('en-IN')}</td>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm border-collapse">
+                  <thead>
+                    <tr className="bg-surface-2">
+                      {['Product', 'HSN', 'Qty', 'Packs', 'Volume', 'Total Volume', 'Price', 'Cash Disc %', 'GST%', 'Amount'].map((h) => (
+                        <th key={h} className="text-left text-xs font-bold text-ink-3 px-3 py-2 border-b border-border whitespace-nowrap">{h}</th>
+                      ))}
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {viewing.items.map((item) => (
+                      <tr key={item.id} className="border-b border-border">
+                        <td className="px-3 py-2">{item.productName}</td>
+                        <td className="px-3 py-2">{item.hsn || '—'}</td>
+                        <td className="px-3 py-2">{item.quantity}</td>
+                        <td className="px-3 py-2">{item.packs}</td>
+                        <td className="px-3 py-2">{item.volume || '—'}</td>
+                        <td className="px-3 py-2">{formatPurchaseTotalVolume(item.volume, item.quantity)}</td>
+                        <td className="px-3 py-2">₹{item.purchasePrice.toLocaleString('en-IN')}</td>
+                        <td className="px-3 py-2">{item.cashDiscountPercent ?? 0}%</td>
+                        <td className="px-3 py-2">{item.gstRate}%</td>
+                        <td className="px-3 py-2 font-semibold">₹{item.amount.toLocaleString('en-IN')}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             )}
             {viewing.notes && <p className="text-xs text-ink-3">Notes: {viewing.notes}</p>}
           </div>

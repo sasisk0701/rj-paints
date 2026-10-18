@@ -19,7 +19,7 @@ export interface KpiItem {
 export interface TableColumn {
   key: string;
   label: string;
-  align?: "left" | "num";
+  align?: "left" | "num" | "center";
 }
 
 /**

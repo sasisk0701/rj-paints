@@ -18,16 +18,16 @@ import { exportProductsToPdf } from '@/utils/transactionPdfExport';
 
 const COLUMNS: TableColumn[] = [
   { key: 'image',    label: 'Image' },
-  { key: 'product',  label: 'Product' },
-  { key: 'category', label: 'Category' },
-  { key: 'hsn',      label: 'HSN Code' },
-  { key: 'color',    label: 'Color' },
-  { key: 'brand',    label: 'Brand' },
-  { key: 'unit',     label: 'Unit' },
-  { key: 'cost',     label: 'Cost',          align: 'num' },
-  { key: 'price',    label: 'Selling Price', align: 'num' },
-  { key: 'stock',    label: 'Stock',         align: 'num' },
-  { key: 'status',   label: 'Status' },
+  { key: 'product',  label: 'Product',        align: 'center' },
+  { key: 'category', label: 'Category',       align: 'center' },
+  { key: 'hsn',      label: 'HSN Code',       align: 'center' },
+  { key: 'color',    label: 'Color',          align: 'center' },
+  { key: 'brand',    label: 'Brand',          align: 'center' },
+  { key: 'unit',     label: 'Unit',           align: 'center' },
+  { key: 'cost',     label: 'Purchase Price', align: 'center' },
+  { key: 'price',    label: 'Selling Price', align: 'center' },
+  { key: 'stock',    label: 'Stock',          align: 'center' },
+  { key: 'status',   label: 'Status',         align: 'center' },
   { key: 'actions',  label: '' },
 ];
 
@@ -264,12 +264,14 @@ export default function Products() {
         </div>
       ),
       product: (
+        <div className="flex justify-center">
         <CellItem
           icon={<Swatch color={p.color || '#6B7280'} />}
           name={p.name}
           sub={p.color || ''}
           mono
         />
+        </div>
       ),
       category: p.categoryName,
       hsn:      p.hsn ?? '',

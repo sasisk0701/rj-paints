@@ -75,6 +75,17 @@ function displayAmount(value: number) {
     : '0.00';
 }
 
+function formatPurchaseVolume(value: unknown, quantity: number, fallbackUnit?: string) {
+  const rawValue = String(value ?? '').trim();
+  const match = rawValue.match(/^([\d,]+(?:\.\d+)?)\s*(.*?)$/);
+  if (!match) return rawValue || '-';
+  const volume = Number(match[1].replace(/,/g, ''));
+  if (!Number.isFinite(volume) || !Number.isFinite(quantity)) return rawValue || '-';
+  const total = volume + quantity;
+  const unit = match[2].trim() || fallbackUnit?.trim() || '';
+  return `${displayNumber(total)}${unit ? ` ${unit}` : ''}`;
+}
+
 function truncate(value: string, maxCharacters: number) {
   const text = ascii(value);
   if (text.length <= maxCharacters) return text;
@@ -182,7 +193,7 @@ export function exportProductsToPdf(products: ApiProduct[], business: string, fi
     : COMPANY_DETAILS.name;
   const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a3' });
   const columns = [
-    'Product', 'Category', 'HSN', 'Brand / Color', 'Unit', 'Purchase Price',
+    'Product', 'Category', 'HSN Code', 'Color', 'Brand', 'Unit', 'Purchase Price',
     'Selling Price', 'GST %', 'Stock', 'Min Stock', 'Status',
   ];
   const chunks = Array.from(
@@ -205,7 +216,8 @@ export function exportProductsToPdf(products: ApiProduct[], business: string, fi
         product.name,
         product.categoryName,
         product.hsn ?? '',
-        [product.brand, product.color].filter(Boolean).join(' / '),
+        product.color ?? '',
+        product.brand,
         product.unit,
         displayAmount(product.purchasePrice),
         displayAmount(product.sellingPrice),
@@ -216,15 +228,8 @@ export function exportProductsToPdf(products: ApiProduct[], business: string, fi
       ].map(ascii)),
       startY: 27,
       margin: { left: 12, right: 12 },
-      styles: { font: 'helvetica', fontSize: 7, cellPadding: 2, overflow: 'linebreak' },
-      headStyles: { fillColor: [230, 230, 230], textColor: [30, 30, 30], fontStyle: 'bold' },
-      columnStyles: {
-        5: { halign: 'right' },
-        6: { halign: 'right' },
-        7: { halign: 'right' },
-        8: { halign: 'right' },
-        9: { halign: 'right' },
-      },
+      styles: { font: 'helvetica', fontSize: 7, cellPadding: 2, overflow: 'linebreak', halign: 'center' },
+      headStyles: { fillColor: [230, 230, 230], textColor: [30, 30, 30], fontStyle: 'bold', halign: 'center' },
       tableWidth: 'auto',
     });
     doc.setFontSize(8);
@@ -327,64 +332,70 @@ function drawPurchaseInvoicePage(
   doc.text('INVOICE DETAILS', 169, 18);
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(9);
-  doc.text(ascii(`Invoice No: ${purchase.poNumber}`), 169, 25);
-  doc.text(ascii(`Invoice Date: ${formatDate(purchase.purchaseDate)}`), 169, 30);
-  doc.text(ascii(`Category: ${categoryLabel || '-'}`), 169, 35);
-  doc.text(ascii(`Payment: ${purchase.paymentMode} | Status: ${purchase.status}`), 169, 40);
+  doc.text(ascii(`Invoice No: ${purchase.invoiceNo || '-'}`), 169, 25);
+  doc.text(ascii(`PO No: ${purchase.poNumber}`), 169, 30);
+  doc.text(ascii(`Invoice Date: ${formatDate(purchase.purchaseDate)}`), 169, 35);
+  doc.text(ascii(`Category: ${categoryLabel || '-'}`), 169, 40);
+  doc.text(ascii(`Payment: ${purchase.paymentMode} | Status: ${purchase.status}`), 169, 45);
 
   doc.setDrawColor(80);
-  doc.line(12, 45, 408, 45);
+  doc.line(12, 50, 408, 50);
   const supplierAddress = [supplier?.address, supplier?.city].filter(Boolean).join(', ');
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(10);
-  doc.text('BILL TO PARTY', 12, 51);
-  doc.text(ascii(supplier?.name ?? purchase.supplierName), 12, 57);
+  doc.text('BILL TO PARTY', 12, 56);
+  doc.text(ascii(supplier?.name ?? purchase.supplierName), 12, 62);
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(8);
-  doc.text(ascii(`Supplier Name: ${purchase.supplierContactName || '-'}`), 12, 63);
-  doc.text(ascii(`Address: ${supplierAddress || '-'}`), 12, 68);
-  doc.text(ascii(`Phone: ${supplier?.phone || '-'}`), 12, 73);
-  if (supplier?.gstNumber) doc.text(ascii(`GSTIN: ${supplier.gstNumber}`), 12, 78);
+  doc.text(ascii(`Supplier Name: ${purchase.supplierContactName || '-'}`), 12, 68);
+  doc.text(ascii(`Address: ${supplierAddress || '-'}`), 12, 73);
+  doc.text(ascii(`Phone: ${supplier?.phone || '-'}`), 12, 78);
+  if (supplier?.gstNumber) doc.text(ascii(`GSTIN: ${supplier.gstNumber}`), 12, 83);
 
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(10);
-  doc.text('SHIP TO PARTY', 220, 51);
-  doc.text(ascii(businessName), 220, 57);
+  const shipToX = 170;
+  doc.text('SHIP TO PARTY', shipToX, 56);
+  doc.text(ascii(businessName), shipToX, 62);
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(8);
-  doc.text(ascii(`Address: ${COMPANY_DETAILS.address}`), 220, 63);
-  doc.text(ascii(`Phone: ${COMPANY_DETAILS.contactNumbers[0]}`), 220, 68);
-  doc.text(ascii(`GSTIN: ${COMPANY_DETAILS.gstNumber}`), 220, 73);
+  doc.text(ascii(truncate(`Address: ${COMPANY_DETAILS.address}`, 85)), shipToX, 68);
+  doc.text(ascii(`Phone: ${COMPANY_DETAILS.contactNumbers[0]}`), shipToX, 73);
+  doc.text(ascii(`GSTIN: ${COMPANY_DETAILS.gstNumber}`), shipToX, 78);
 
   const headers = [
-    'Material', 'Description', 'Qty', 'Packs', 'Volume (kg/lt.M)', 'Rate (INR / %)',
+    'Material', 'Description', 'Qty', 'Packs', 'Total Volume', 'Rate (INR / %)',
     'Value', 'In Bill Disc', 'Cash Disc', 'Rebate Disc', 'Taxable Amount', 'Tax Amount', 'Total Amount',
   ];
   autoTable(doc, {
     head: [headers],
     body: pageItems.map((cells) => cells.map((cell) => ascii(cell))),
-    startY: 84,
+    startY: 89,
     margin: { left: 11, right: 11, bottom: 22 },
-    tableWidth: 'auto',
+    tableWidth: 388,
     styles: {
       font: 'helvetica',
-      fontSize: 6.5,
-      cellPadding: 1.5,
+      fontSize: 6,
+      cellPadding: 1.2,
       overflow: 'linebreak',
       minCellHeight: 13,
+      halign: 'center',
     },
     headStyles: { fillColor: [230, 230, 230], textColor: [25, 25, 25], fontStyle: 'bold', halign: 'center' },
     columnStyles: {
-      2: { halign: 'right' },
-      3: { halign: 'right' },
-      5: { halign: 'right' },
-      6: { halign: 'right' },
-      7: { halign: 'right' },
-      8: { halign: 'right' },
-      9: { halign: 'right' },
-      10: { halign: 'right' },
-      11: { halign: 'right' },
-      12: { halign: 'right' },
+      0: { cellWidth: 52 },
+      1: { cellWidth: 48 },
+      2: { cellWidth: 14 },
+      3: { cellWidth: 14 },
+      4: { cellWidth: 24 },
+      5: { cellWidth: 33 },
+      6: { cellWidth: 27 },
+      7: { cellWidth: 30 },
+      8: { cellWidth: 26 },
+      9: { cellWidth: 27 },
+      10: { cellWidth: 34 },
+      11: { cellWidth: 25 },
+      12: { cellWidth: 34 },
     },
     didDrawPage: () => {
       doc.setFont('helvetica', 'normal');
@@ -429,6 +440,7 @@ export function exportPurchasesToPdf(
       const product = products.find((entry) => entry.id === item.productId);
       if (product?.categoryName) categories.add(product.categoryName);
       const halfTaxRate = gstRate / 2;
+      const volumeDisplay = formatPurchaseVolume(item.volume, quantity, product?.unit);
       const formatDiscount = (amount: number, percent: number) => {
         if (amount === 0 && percent === 0) return '0.00';
         return percent > 0
@@ -441,7 +453,7 @@ export function exportPurchasesToPdf(
           `${product?.description?.trim() || item.productName}\nIN: Central GST OP\nIN: State GST OP`,
           displayNumber(quantity),
           displayNumber(item.packs ?? 0),
-          item.volume || product?.unit || '-',
+          volumeDisplay,
           `${displayAmount(rate)}\n${displayAmount(halfTaxRate)}\n${displayAmount(halfTaxRate)}`,
           displayAmount(value),
           formatDiscount(inBillDiscount, inBillDiscountPercent),
