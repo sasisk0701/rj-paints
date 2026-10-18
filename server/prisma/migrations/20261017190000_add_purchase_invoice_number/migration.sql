@@ -1,0 +1,1 @@
+ALTER TABLE `Purchase` ADD COLUMN `invoiceNo` VARCHAR(191) NULL;

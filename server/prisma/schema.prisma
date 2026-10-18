@@ -183,6 +183,7 @@ model StockAdjustmentItem {
 model Purchase {
   id           String        @id @default(uuid())
   poNumber     String        @unique
+  invoiceNo    String?
   supplierId   String?
   supplier     Supplier?     @relation(fields: [supplierId], references: [id])
   supplierName String

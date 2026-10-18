@@ -1813,6 +1813,7 @@ app.get('/api/purchases', authenticateJWT, async (req, res) => {
   if (status)   where.status   = status;
   if (search)   where.OR = [
     { poNumber:     { contains: search } },
+    { invoiceNo:    { contains: search } },
     { supplierName: { contains: search } },
   ];
   const purchases = await prisma.purchase.findMany({
@@ -1845,7 +1846,7 @@ app.get('/api/purchases', authenticateJWT, async (req, res) => {
 });
 
 app.post('/api/purchases', authenticateJWT, async (req: AuthRequest, res) => {
-  const { poNumber, supplierId, supplierName, supplierContactName, purchaseDate, paymentMode, hsn, status, received, notes, business, items } = req.body;
+  const { poNumber, invoiceNo, supplierId, supplierName, supplierContactName, purchaseDate, paymentMode, hsn, status, received, notes, business, items } = req.body;
   if (!poNumber || !supplierName || !purchaseDate || !paymentMode || !Array.isArray(items) || !items.length)
     return res.status(400).json({ error: 'poNumber, supplierName, purchaseDate, paymentMode and items are required' });
   try {
@@ -1948,7 +1949,7 @@ app.post('/api/purchases', authenticateJWT, async (req: AuthRequest, res) => {
 
       const created = await tx.purchase.create({
         data: {
-          poNumber, supplierName,
+          poNumber, invoiceNo: invoiceNo || null, supplierName,
           supplierId: supplierId || null,
           supplierContactName: supplierContactName || null,
           purchaseDate: new Date(purchaseDate),
@@ -1981,7 +1982,7 @@ app.post('/api/purchases', authenticateJWT, async (req: AuthRequest, res) => {
 });
 
 app.put('/api/purchases/:id', authenticateJWT, async (req: AuthRequest, res) => {
-  const { supplierId, supplierName, supplierContactName, purchaseDate, paymentMode, hsn, status, received, notes, items } = req.body;
+  const { invoiceNo, supplierId, supplierName, supplierContactName, purchaseDate, paymentMode, hsn, status, received, notes, items } = req.body;
   try {
     let subtotal = 0, gstAmount = 0, totalAmount = 0;
     const itemsData = items?.map((item: any) => {
@@ -2054,6 +2055,7 @@ app.put('/api/purchases/:id', authenticateJWT, async (req: AuthRequest, res) => 
         data: {
           supplier: supplierId ? { connect: { id: supplierId } } : { disconnect: true },
           supplierName, paymentMode, status,
+          invoiceNo: invoiceNo === undefined ? undefined : invoiceNo || null,
           supplierContactName: supplierContactName || null,
           hsn: hsn ?? undefined,
           received: received ?? undefined,
