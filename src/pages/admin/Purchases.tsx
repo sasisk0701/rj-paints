@@ -17,7 +17,7 @@ import type { KpiItem, TableColumn, Tone } from '@/types/types';
 import { exportPurchasesToPdf } from '@/utils/transactionPdfExport';
 
 const COLUMNS: TableColumn[] = [
-  { key: 'po',       label: 'PO #' },
+  { key: 'invoice',  label: 'Invoice #' },
   { key: 'date',     label: 'Date' },
   { key: 'supplier', label: 'Supplier' },
   { key: 'items',    label: 'Items' },
@@ -55,10 +55,11 @@ function parsePurchaseVolume(value?: string) {
   };
 }
 
+// Stored volume is "per unit" (e.g. "2 kg"). Total = quantity x volume.
 function formatPurchaseTotalVolume(value: string, quantity: number) {
   const volume = parsePurchaseVolume(value);
   if (volume.amount === undefined || !Number.isFinite(quantity)) return volume.legacy || '—';
-  const total = volume.amount + quantity;
+  const total = volume.amount * quantity;
   return `${Number(total.toFixed(3)).toLocaleString('en-IN')}${volume.unit ? ` ${volume.unit}` : ''}`;
 }
 
@@ -71,7 +72,7 @@ function PurchaseVolumeField({ fieldIndex, form }: { fieldIndex: number; form: F
 
   return (
     <Form.Item label="Volume" className="col-span-6 md:col-span-3">
-      <Form.Item name={['items', fieldIndex, 'volume']} noStyle>
+      <Form.Item name={[fieldIndex, 'volume']} noStyle>
         <Input
           inputMode="decimal"
           aria-label="Volume amount"
@@ -91,36 +92,56 @@ function PurchaseVolumeField({ fieldIndex, form }: { fieldIndex: number; form: F
   );
 }
 
-function PurchaseTotalVolume({ fieldIndex, form }: { fieldIndex: number; form: FormInstance }) {
+
+function PurchaseTotalVolume({
+  fieldIndex,
+  form,
+}: {
+  fieldIndex: number;
+  form: FormInstance;
+}) {
+  const quantity = Form.useWatch(
+    ['items', fieldIndex, 'quantity'],
+    form,
+  );
+
+  const volume = Form.useWatch(
+    ['items', fieldIndex, 'volume'],
+    form,
+  );
+
+  const volumeUnit = Form.useWatch(
+    ['items', fieldIndex, 'volumeUnit'],
+    form,
+  );
+
+  const hasValidValues =
+    quantity !== undefined &&
+    quantity !== null &&
+    quantity !== '' &&
+    volume !== undefined &&
+    volume !== null &&
+    String(volume).trim() !== '' &&
+    Number.isFinite(Number(quantity)) &&
+    Number.isFinite(Number(volume));
+
+  const totalVolume = hasValidValues
+    ? `${Number(
+        (Number(quantity) * Number(volume)).toFixed(3),
+      ).toLocaleString('en-IN')} ${volumeUnit || 'kg'}`
+    : '';
+
   return (
     <Form.Item
       label="Total Volume"
       className="col-span-6 md:col-span-3"
-      shouldUpdate={(previous, current) =>
-        previous.items?.[fieldIndex]?.quantity !== current.items?.[fieldIndex]?.quantity
-        || previous.items?.[fieldIndex]?.volume !== current.items?.[fieldIndex]?.volume
-        || previous.items?.[fieldIndex]?.volumeUnit !== current.items?.[fieldIndex]?.volumeUnit
-      }
     >
-      {() => {
-        const item = form.getFieldValue(['items', fieldIndex]) ?? {};
-        const quantity = Number(item.quantity);
-        const volume = Number(item.volume);
-        const total = quantity + volume;
-        const value = item.quantity !== undefined && item.quantity !== '' &&
-          item.volume !== undefined && item.volume !== '' && Number.isFinite(total)
-          ? `${Number(total.toFixed(3)).toLocaleString('en-IN')} ${item.volumeUnit || 'kg'}`
-          : '';
-
-        return (
-          <Input
-            aria-label="Total volume (quantity plus volume)"
-            value={value}
-            placeholder="Qty + Volume"
-            readOnly
-          />
-        );
-      }}
+      <Input
+        value={totalVolume}
+        placeholder="Auto-calculated"
+        readOnly
+        aria-label="Total volume"
+      />
     </Form.Item>
   );
 }
@@ -194,7 +215,7 @@ export default function Purchases() {
     setEditing(null);
     form.resetFields();
     form.setFieldsValue({
-      poNumber: `PO-${Date.now()}`,
+      invoiceNo: '',
       supplier: '',
       supplierName: '',
       purchaseDate: new Date().toISOString().split('T')[0],
@@ -203,7 +224,7 @@ export default function Purchases() {
       received: true,
       business: toggle.toUpperCase(),
       items: [{
-        productId: '', productName: '', quantity: 1, packs: 0,         volume: undefined, volumeUnit: 'kg', legacyVolume: '', purchasePrice: 0, hsn: '',
+        productId: '', productName: '', quantity: 1, packs: 0, volume: undefined, volumeUnit: 'kg', legacyVolume: '', purchasePrice: 0, hsn: '',
         newProduct: { sellingPrice: 0, minStock: 0 },
         inBillDiscountValue: 0, inBillDiscountType: 'amount',
         rebateDiscountValue: 0, rebateDiscountType: 'amount',
@@ -217,7 +238,7 @@ export default function Purchases() {
   const openEdit = (p: ApiPurchase) => {
     setEditing(p);
     form.setFieldsValue({
-      poNumber: p.poNumber,
+      invoiceNo: p.invoiceNo,
       supplierId: p.supplierId ?? undefined,
       supplier:       [p.supplierName, p.supplierContactName].filter(Boolean).join(' · '),
       supplierName: p.supplierContactName ?? '',
@@ -278,6 +299,7 @@ export default function Purchases() {
       const { supplier, ...purchaseValues } = values;
       const payload = {
         ...purchaseValues,
+        invoiceNo: String(values.invoiceNo ?? '').trim(),
         supplierName: supplier,
         supplierContactName: values.supplierName || '',
         items: values.items.map((item: any) => {
@@ -399,10 +421,10 @@ export default function Purchases() {
 
   const handleExportPurchase = useCallback((purchase: ApiPurchase) => {
     try {
-      exportPurchasesToPdf([purchase], suppliers, products, toggle, `purchase-${purchase.poNumber}`);
+      exportPurchasesToPdf([purchase], suppliers, products, toggle, `purchase-${purchase.invoiceNo}`);
     } catch (error) {
-      console.error(`Failed to export purchase ${purchase.poNumber}:`, error);
-      message.error(`Failed to export ${purchase.poNumber} PDF`);
+      console.error(`Failed to export purchase ${purchase.invoiceNo}:`, error);
+      message.error(`Failed to export ${purchase.invoiceNo} PDF`);
     }
   }, [suppliers, products, toggle]);
 
@@ -422,7 +444,7 @@ export default function Purchases() {
   const rows = useMemo(() =>
     visiblePurchases.map((p) => ({
       id: p.id,
-      po:       <span className="font-mono">{p.poNumber}</span>,
+      invoice:  <span className="font-mono">{p.invoiceNo}</span>,
       date:     p.purchaseDate,
       supplier: [p.supplierName, p.supplierContactName].filter(Boolean).join(' · '),
       items:    `${p.items?.length ?? '—'} item(s)`,
@@ -432,7 +454,7 @@ export default function Purchases() {
         <div className="flex gap-1">
           <Button variant="ghost" size="sm" icon={Eye} onClick={() => { setViewing(p); setViewOpen(true); }} />
           <Button variant="ghost" size="sm" icon={Pencil} onClick={() => openEdit(p)}>Edit</Button>
-          <Button variant="ghost" size="sm" icon={Download} title="Download purchase PDF" aria-label={`Download ${p.poNumber} as PDF`} onClick={() => handleExportPurchase(p)} />
+          <Button variant="ghost" size="sm" icon={Download} title="Download purchase PDF" aria-label={`Download ${p.invoiceNo} as PDF`} onClick={() => handleExportPurchase(p)} />
           <Button variant="dangerGhost" size="sm" icon={Trash2} onClick={() => setDeleteTarget(p)} />
         </div>
       ),
@@ -459,7 +481,7 @@ export default function Purchases() {
               placeholder={['From date', 'To date']}
               allowClear
             />
-            <SearchBox placeholder="Search PO, supplier…" value={search} onChange={(e) => { setSearch(e.target.value); setCurrentPage(1); }} />
+            <SearchBox placeholder="Search invoice, supplier…" value={search} onChange={(e) => { setSearch(e.target.value); setCurrentPage(1); }} />
           </>
         }
         right={
@@ -499,7 +521,7 @@ export default function Purchases() {
       <AppModal
         open={modalOpen}
         title={editing ? 'Edit Purchase' : 'New Purchase Order'}
-        subtitle={editing ? `Editing: ${editing.poNumber}` : 'Create a new purchase order from supplier'}
+        subtitle={editing ? `Editing: ${editing.invoiceNo}` : 'Create a new purchase order from supplier'}
         onClose={() => { setModalOpen(false); form.resetFields(); }}
         onConfirm={handleSubmit}
         confirmText={editing ? 'Save Changes' : 'Create Purchase'}
@@ -508,8 +530,8 @@ export default function Purchases() {
       >
         <Form form={form} layout="vertical">
           <div className="grid grid-cols-2 gap-x-4">
-            <Form.Item name="poNumber" label="PO Number" rules={[{ required: true, message: 'Required' }]}>
-              <Input placeholder="PO-1001" />
+            <Form.Item name="invoiceNo" label="Invoice Number" rules={[{ required: true, whitespace: true, message: 'Required' }]}>
+              <Input placeholder="INV-1001" />
             </Form.Item>
             <Form.Item name="supplierId" hidden>
               <Input />
@@ -753,7 +775,7 @@ export default function Purchases() {
       {/* ── View Modal ── */}
       <AppModal
         open={viewOpen}
-        title={`Purchase Order — ${viewing?.poNumber}`}
+        title={`Purchase Order — ${viewing?.invoiceNo}`}
         subtitle={`${[viewing?.supplierName, viewing?.supplierContactName].filter(Boolean).join(' · ')} · ${viewing?.purchaseDate}`}
         onClose={() => setViewOpen(false)}
         onConfirm={() => setViewOpen(false)}
@@ -806,7 +828,7 @@ export default function Purchases() {
       {/* ── Delete Confirm ── */}
       <ConfirmDialog
         open={!!deleteTarget}
-        title={`Delete "${deleteTarget?.poNumber}"?`}
+        title={`Delete "${deleteTarget?.invoiceNo}"?`}
         description="This purchase order will be permanently removed."
         onCancel={() => setDeleteTarget(null)}
         onConfirm={handleDelete}

@@ -333,7 +333,6 @@ function drawPurchaseInvoicePage(
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(9);
   doc.text(ascii(`Invoice No: ${purchase.invoiceNo || '-'}`), 169, 25);
-  doc.text(ascii(`PO No: ${purchase.poNumber}`), 169, 30);
   doc.text(ascii(`Invoice Date: ${formatDate(purchase.purchaseDate)}`), 169, 35);
   doc.text(ascii(`Category: ${categoryLabel || '-'}`), 169, 40);
   doc.text(ascii(`Payment: ${purchase.paymentMode} | Status: ${purchase.status}`), 169, 45);
@@ -400,7 +399,7 @@ function drawPurchaseInvoicePage(
     didDrawPage: () => {
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(8);
-      if (!isLastPage) doc.text(ascii(`Continued - ${purchase.poNumber}`), 12, 288);
+      if (!isLastPage) doc.text(ascii(`Continued - ${purchase.invoiceNo}`), 12, 288);
       doc.text(`Page ${pageNumber} of ${totalPages}`, 408, 288, { align: 'right' });
     },
   });

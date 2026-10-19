@@ -679,7 +679,7 @@ app.get('/api/products', authenticateJWT, async (req, res) => {
           quantity: true,
           purchase: {
             select: {
-              poNumber: true,
+              invoiceNo: true,
               supplierName: true,
               supplierContactName: true,
               purchaseDate: true,
@@ -701,7 +701,7 @@ app.get('/api/products', authenticateJWT, async (req, res) => {
     const purchaseHistory = purchaseItems
       .filter((item) => !item.purchase.deletedAt)
       .map((item) => ({
-        poNumber: item.purchase.poNumber,
+        invoiceNo: item.purchase.invoiceNo,
         supplierName: item.purchase.supplierName,
         supplierContactName: item.purchase.supplierContactName,
         purchaseDate: item.purchase.purchaseDate,
@@ -715,7 +715,7 @@ app.get('/api/products', authenticateJWT, async (req, res) => {
       status: product.stock > 0 || product.status === 'In Stock' ? 'In Stock' : 'Out of Stock',
       purchaseHistory,
       latestPurchase: latestPurchase ? {
-        poNumber: latestPurchase.purchase.poNumber,
+        invoiceNo: latestPurchase.purchase.invoiceNo,
         supplierName: latestPurchase.purchase.supplierName,
         quantity: latestPurchase.quantity,
         amount: latestPurchase.amount,
@@ -1812,8 +1812,7 @@ app.get('/api/purchases', authenticateJWT, async (req, res) => {
   if (business) where.business = business.toUpperCase();
   if (status)   where.status   = status;
   if (search)   where.OR = [
-    { poNumber:     { contains: search } },
-    { invoiceNo:    { contains: search } },
+    { invoiceNo: { contains: search } },
     { supplierName: { contains: search } },
   ];
   const purchases = await prisma.purchase.findMany({
@@ -1846,9 +1845,9 @@ app.get('/api/purchases', authenticateJWT, async (req, res) => {
 });
 
 app.post('/api/purchases', authenticateJWT, async (req: AuthRequest, res) => {
-  const { poNumber, invoiceNo, supplierId, supplierName, supplierContactName, purchaseDate, paymentMode, hsn, status, received, notes, business, items } = req.body;
-  if (!poNumber || !supplierName || !purchaseDate || !paymentMode || !Array.isArray(items) || !items.length)
-    return res.status(400).json({ error: 'poNumber, supplierName, purchaseDate, paymentMode and items are required' });
+  const { invoiceNo, supplierId, supplierName, supplierContactName, purchaseDate, paymentMode, hsn, status, received, notes, business, items } = req.body;
+  if (!String(invoiceNo ?? '').trim() || !supplierName || !purchaseDate || !paymentMode || !Array.isArray(items) || !items.length)
+    return res.status(400).json({ error: 'invoiceNo, supplierName, purchaseDate, paymentMode and items are required' });
   try {
     const isReceived = received !== false;
     const purchaseBusiness = (business || 'PAINTS').toUpperCase() as any;
@@ -1949,7 +1948,7 @@ app.post('/api/purchases', authenticateJWT, async (req: AuthRequest, res) => {
 
       const created = await tx.purchase.create({
         data: {
-          poNumber, invoiceNo: invoiceNo || null, supplierName,
+          invoiceNo: String(invoiceNo).trim(), supplierName,
           supplierId: supplierId || null,
           supplierContactName: supplierContactName || null,
           purchaseDate: new Date(purchaseDate),
@@ -1973,16 +1972,19 @@ app.post('/api/purchases', authenticateJWT, async (req: AuthRequest, res) => {
       }
       return created;
     });
-    await prisma.activityLog.create({ data: { userId: req.user.id, userName: req.user.name, action: 'Purchase Created', module: 'Trade', reference: poNumber, business: purchaseBusiness.toLowerCase() } });
+    await prisma.activityLog.create({ data: { userId: req.user.id, userName: req.user.name, action: 'Purchase Created', module: 'Trade', reference: invoiceNo, business: purchaseBusiness.toLowerCase() } });
     res.status(201).json(purchase);
   } catch (err: any) {
-    if (err?.code === 'P2002') return res.status(409).json({ error: 'PO number already exists' });
+    if (err?.code === 'P2002') return res.status(409).json({ error: 'Invoice number already exists' });
     res.status(400).json({ error: err?.message || 'Failed to create purchase' });
   }
 });
 
 app.put('/api/purchases/:id', authenticateJWT, async (req: AuthRequest, res) => {
   const { invoiceNo, supplierId, supplierName, supplierContactName, purchaseDate, paymentMode, hsn, status, received, notes, items } = req.body;
+  if (invoiceNo !== undefined && !String(invoiceNo ?? '').trim()) {
+    return res.status(400).json({ error: 'invoiceNo cannot be empty' });
+  }
   try {
     let subtotal = 0, gstAmount = 0, totalAmount = 0;
     const itemsData = items?.map((item: any) => {
@@ -2055,7 +2057,7 @@ app.put('/api/purchases/:id', authenticateJWT, async (req: AuthRequest, res) => 
         data: {
           supplier: supplierId ? { connect: { id: supplierId } } : { disconnect: true },
           supplierName, paymentMode, status,
-          invoiceNo: invoiceNo === undefined ? undefined : invoiceNo || null,
+          invoiceNo: invoiceNo === undefined ? undefined : String(invoiceNo).trim(),
           supplierContactName: supplierContactName || null,
           hsn: hsn ?? undefined,
           received: received ?? undefined,
@@ -2066,7 +2068,7 @@ app.put('/api/purchases/:id', authenticateJWT, async (req: AuthRequest, res) => 
         include: { items: true },
       });
     });
-    await prisma.activityLog.create({ data: { userId: req.user.id, userName: req.user.name, action: 'Purchase Updated', module: 'Trade', reference: purchase.poNumber } });
+    await prisma.activityLog.create({ data: { userId: req.user.id, userName: req.user.name, action: 'Purchase Updated', module: 'Trade', reference: purchase.invoiceNo } });
     res.json(purchase);
   } catch (err: any) {
     res.status(400).json({ error: err?.message || 'Failed to update purchase' });
@@ -2094,7 +2096,7 @@ app.delete('/api/purchases/:id', authenticateJWT, async (req: AuthRequest, res) 
   } catch (err: any) {
     return res.status(400).json({ error: err?.message || 'Failed to delete purchase' });
   }
-  await prisma.activityLog.create({ data: { userId: req.user.id, userName: req.user.name, action: 'Purchase Deleted', module: 'Trade', reference: purchase.poNumber } });
+  await prisma.activityLog.create({ data: { userId: req.user.id, userName: req.user.name, action: 'Purchase Deleted', module: 'Trade', reference: purchase.invoiceNo } });
   res.json({ message: 'Purchase deleted' });
 });
 
@@ -2571,8 +2573,8 @@ app.get('/api/reports/:type', authenticateJWT, async (req, res) => {
         const purchases = await prisma.purchase.findMany({ where, orderBy: { purchaseDate: 'desc' } });
         return res.json({
           title: 'Purchase Report',
-          columns: ['Date', 'PO Number', 'Supplier', 'Payment Mode', 'Status', 'Total Amount'],
-          rows: purchases.map(p => [formatShortDate(p.purchaseDate), p.poNumber, p.supplierName, p.paymentMode, p.status, formatCurrency(p.totalAmount)]),
+          columns: ['Date', 'Invoice Number', 'Supplier', 'Payment Mode', 'Status', 'Total Amount'],
+          rows: purchases.map(p => [formatShortDate(p.purchaseDate), p.invoiceNo, p.supplierName, p.paymentMode, p.status, formatCurrency(p.totalAmount)]),
           summary: { 'Total Purchases': purchases.length, 'Total Amount': formatCurrency(purchases.reduce((s, p) => s + p.totalAmount, 0)) },
         });
       }
@@ -2661,7 +2663,7 @@ app.get('/api/dashboard', authenticateJWT, async (req, res) => {
       `SELECT id, name, stock, minStock, sellingPrice FROM Product WHERE deletedAt IS NULL AND stock > 0 AND stock <= minStock AND business IN (${scope!.map(b => `'${b}'`).join(',')}) ORDER BY stock ASC LIMIT 8`
     ),
     prisma.sale.findMany({ where: { deletedAt: null, business: biz as any }, orderBy: { createdAt: 'desc' }, take: 5, select: { invoiceNumber: true, customerName: true, totalAmount: true, status: true, saleDate: true } }),
-    prisma.purchase.findMany({ where: { deletedAt: null, business: biz as any }, orderBy: { createdAt: 'desc' }, take: 3, select: { poNumber: true, supplierName: true, totalAmount: true, status: true, purchaseDate: true } }),
+    prisma.purchase.findMany({ where: { deletedAt: null, business: biz as any }, orderBy: { createdAt: 'desc' }, take: 3, select: { invoiceNo: true, supplierName: true, totalAmount: true, status: true, purchaseDate: true } }),
     prisma.expense.findMany({ where: { expenseDate: { gte: ms, lt: me } }, orderBy: { expenseDate: 'desc' }, take: 3, select: { title: true, amount: true, category: true, expenseDate: true } }),
     prisma.bankAccount.findMany({ where: { deletedAt: null, business: biz as any }, select: { currentBalance: true } }),
     prisma.cashTransaction.findMany({ where: { business: biz as any }, select: { amount: true, direction: true } }),
@@ -2692,7 +2694,7 @@ app.get('/api/dashboard', authenticateJWT, async (req, res) => {
 
   const recentTxns = [
     ...recentSales.map(s => ({ ref: s.invoiceNumber, type: 'Sale', party: s.customerName, amount: formatCurrency(s.totalAmount), status: s.status, statusTone: s.status === 'Paid' ? 'success' : s.status === 'Pending' ? 'warn' : 'danger' })),
-    ...recentPurchases.map(p => ({ ref: p.poNumber, type: 'Purchase', party: p.supplierName, amount: formatCurrency(p.totalAmount), status: p.status, statusTone: p.status === 'Received' ? 'success' : p.status === 'Pending' ? 'warn' : 'danger' })),
+    ...recentPurchases.map(p => ({ ref: p.invoiceNo, type: 'Purchase', party: p.supplierName, amount: formatCurrency(p.totalAmount), status: p.status, statusTone: p.status === 'Received' ? 'success' : p.status === 'Pending' ? 'warn' : 'danger' })),
     ...recentExpenses.map(e => ({ ref: 'EXP', type: 'Expense', party: e.category, amount: formatCurrency(e.amount), status: 'Paid', statusTone: 'neutral' })),
   ].slice(0, 6);
 

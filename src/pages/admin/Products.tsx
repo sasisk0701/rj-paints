@@ -378,7 +378,7 @@ export default function Products() {
             <table className="w-full text-sm border-collapse">
               <thead>
                 <tr className="bg-surface-2">
-                  {['PO Number', 'Date', 'Supplier', 'Qty', 'Amount', 'Payment', 'Status'].map((heading) => (
+                  {['Invoice Number', 'Date', 'Supplier', 'Qty', 'Amount', 'Payment', 'Status'].map((heading) => (
                     <th key={heading} className="text-left text-xs font-bold text-ink-3 px-3 py-2 border-b border-border">
                       {heading}
                     </th>
@@ -387,8 +387,8 @@ export default function Products() {
               </thead>
               <tbody>
                 {purchaseHistoryProduct.purchaseHistory.map((purchase, index) => (
-                  <tr key={`${purchase.poNumber}-${index}`} className="border-b border-border">
-                    <td className="px-3 py-2 font-mono">{purchase.poNumber}</td>
+                  <tr key={`${purchase.invoiceNo}-${index}`} className="border-b border-border">
+                    <td className="px-3 py-2 font-mono">{purchase.invoiceNo}</td>
                     <td className="px-3 py-2">{new Date(purchase.purchaseDate).toLocaleDateString('en-IN')}</td>
                     <td className="px-3 py-2">
                       {[purchase.supplierName, purchase.supplierContactName].filter(Boolean).join(' · ')}

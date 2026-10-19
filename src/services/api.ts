@@ -126,7 +126,7 @@ export interface ApiProduct {
   business: string; status: string; createdAt: string; updatedAt: string;
   category?: { id: string; name: string } | null;
   purchaseHistory?: {
-    poNumber: string;
+    invoiceNo: string;
     supplierName: string;
     supplierContactName: string | null;
     purchaseDate: string;
@@ -416,7 +416,7 @@ export const inventoryService = {
 
 // ─── Purchases (API-backed) ─────────────────────────────────────────────────
 export interface ApiPurchase {
-  id: string; poNumber: string; supplierName: string; supplierId?: string | null;
+  id: string; supplierName: string; supplierId?: string | null;
   invoiceNo?: string | null;
   supplierContactName?: string | null;
   purchaseDate: string; paymentMode: string; hsn: string; status: string;
