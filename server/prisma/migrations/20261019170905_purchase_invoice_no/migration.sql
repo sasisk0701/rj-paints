@@ -10,7 +10,7 @@
 DROP INDEX `Purchase_poNumber_key` ON `Purchase`;
 
 -- AlterTable
-ALTER TABLE `product` MODIFY `stock` INTEGER NOT NULL DEFAULT 1,
+ALTER TABLE `Product` MODIFY `stock` INTEGER NOT NULL DEFAULT 1,
     MODIFY `minStock` INTEGER NOT NULL DEFAULT 0;
 
 -- AlterTable
