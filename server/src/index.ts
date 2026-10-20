@@ -1812,6 +1812,7 @@ app.get('/api/purchases', authenticateJWT, async (req, res) => {
   if (business) where.business = business.toUpperCase();
   if (status)   where.status   = status;
   if (search)   where.OR = [
+    { poNumber: { contains: search } },
     { invoiceNo: { contains: search } },
     { supplierName: { contains: search } },
   ];
@@ -1845,9 +1846,9 @@ app.get('/api/purchases', authenticateJWT, async (req, res) => {
 });
 
 app.post('/api/purchases', authenticateJWT, async (req: AuthRequest, res) => {
-  const { invoiceNo, supplierId, supplierName, supplierContactName, purchaseDate, paymentMode, hsn, status, received, notes, business, items } = req.body;
-  if (!String(invoiceNo ?? '').trim() || !supplierName || !purchaseDate || !paymentMode || !Array.isArray(items) || !items.length)
-    return res.status(400).json({ error: 'invoiceNo, supplierName, purchaseDate, paymentMode and items are required' });
+  const { poNumber, invoiceNo, supplierId, supplierName, supplierContactName, purchaseDate, paymentMode, hsn, status, received, notes, business, items } = req.body;
+  if (!String(poNumber ?? '').trim() || !String(invoiceNo ?? '').trim() || !supplierName || !purchaseDate || !paymentMode || !Array.isArray(items) || !items.length)
+    return res.status(400).json({ error: 'poNumber, invoiceNo, supplierName, purchaseDate, paymentMode and items are required' });
   try {
     const isReceived = received !== false;
     const purchaseBusiness = (business || 'PAINTS').toUpperCase() as any;
@@ -1948,6 +1949,7 @@ app.post('/api/purchases', authenticateJWT, async (req: AuthRequest, res) => {
 
       const created = await tx.purchase.create({
         data: {
+          poNumber: String(poNumber).trim(),
           invoiceNo: String(invoiceNo).trim(), supplierName,
           supplierId: supplierId || null,
           supplierContactName: supplierContactName || null,
@@ -1975,13 +1977,16 @@ app.post('/api/purchases', authenticateJWT, async (req: AuthRequest, res) => {
     await prisma.activityLog.create({ data: { userId: req.user.id, userName: req.user.name, action: 'Purchase Created', module: 'Trade', reference: invoiceNo, business: purchaseBusiness.toLowerCase() } });
     res.status(201).json(purchase);
   } catch (err: any) {
-    if (err?.code === 'P2002') return res.status(409).json({ error: 'Invoice number already exists' });
+    if (err?.code === 'P2002') return res.status(409).json({ error: 'PO number or invoice number already exists' });
     res.status(400).json({ error: err?.message || 'Failed to create purchase' });
   }
 });
 
 app.put('/api/purchases/:id', authenticateJWT, async (req: AuthRequest, res) => {
-  const { invoiceNo, supplierId, supplierName, supplierContactName, purchaseDate, paymentMode, hsn, status, received, notes, items } = req.body;
+  const { poNumber, invoiceNo, supplierId, supplierName, supplierContactName, purchaseDate, paymentMode, hsn, status, received, notes, items } = req.body;
+  if (poNumber !== undefined && !String(poNumber ?? '').trim()) {
+    return res.status(400).json({ error: 'poNumber cannot be empty' });
+  }
   if (invoiceNo !== undefined && !String(invoiceNo ?? '').trim()) {
     return res.status(400).json({ error: 'invoiceNo cannot be empty' });
   }
@@ -2057,6 +2062,7 @@ app.put('/api/purchases/:id', authenticateJWT, async (req: AuthRequest, res) => 
         data: {
           supplier: supplierId ? { connect: { id: supplierId } } : { disconnect: true },
           supplierName, paymentMode, status,
+          poNumber: poNumber === undefined ? undefined : String(poNumber).trim(),
           invoiceNo: invoiceNo === undefined ? undefined : String(invoiceNo).trim(),
           supplierContactName: supplierContactName || null,
           hsn: hsn ?? undefined,
@@ -2071,6 +2077,7 @@ app.put('/api/purchases/:id', authenticateJWT, async (req: AuthRequest, res) => 
     await prisma.activityLog.create({ data: { userId: req.user.id, userName: req.user.name, action: 'Purchase Updated', module: 'Trade', reference: purchase.invoiceNo } });
     res.json(purchase);
   } catch (err: any) {
+    if (err?.code === 'P2002') return res.status(409).json({ error: 'PO number or invoice number already exists' });
     res.status(400).json({ error: err?.message || 'Failed to update purchase' });
   }
 });

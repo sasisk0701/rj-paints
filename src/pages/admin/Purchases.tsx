@@ -17,6 +17,7 @@ import type { KpiItem, TableColumn, Tone } from '@/types/types';
 import { exportPurchasesToPdf } from '@/utils/transactionPdfExport';
 
 const COLUMNS: TableColumn[] = [
+  { key: 'poNumber', label: 'PO #' },
   { key: 'invoice',  label: 'Invoice #' },
   { key: 'date',     label: 'Date' },
   { key: 'supplier', label: 'Supplier' },
@@ -215,6 +216,7 @@ export default function Purchases() {
     setEditing(null);
     form.resetFields();
     form.setFieldsValue({
+      poNumber: `PO-${Date.now().toString().slice(-8)}`,
       invoiceNo: '',
       supplier: '',
       supplierName: '',
@@ -238,6 +240,7 @@ export default function Purchases() {
   const openEdit = (p: ApiPurchase) => {
     setEditing(p);
     form.setFieldsValue({
+      poNumber: p.poNumber,
       invoiceNo: p.invoiceNo,
       supplierId: p.supplierId ?? undefined,
       supplier:       [p.supplierName, p.supplierContactName].filter(Boolean).join(' · '),
@@ -299,6 +302,7 @@ export default function Purchases() {
       const { supplier, ...purchaseValues } = values;
       const payload = {
         ...purchaseValues,
+        poNumber: String(values.poNumber ?? '').trim(),
         invoiceNo: String(values.invoiceNo ?? '').trim(),
         supplierName: supplier,
         supplierContactName: values.supplierName || '',
@@ -421,10 +425,10 @@ export default function Purchases() {
 
   const handleExportPurchase = useCallback((purchase: ApiPurchase) => {
     try {
-      exportPurchasesToPdf([purchase], suppliers, products, toggle, `purchase-${purchase.invoiceNo}`);
+      exportPurchasesToPdf([purchase], suppliers, products, toggle, `purchase-${purchase.poNumber}`);
     } catch (error) {
-      console.error(`Failed to export purchase ${purchase.invoiceNo}:`, error);
-      message.error(`Failed to export ${purchase.invoiceNo} PDF`);
+      console.error(`Failed to export purchase ${purchase.poNumber}:`, error);
+      message.error(`Failed to export ${purchase.poNumber} PDF`);
     }
   }, [suppliers, products, toggle]);
 
@@ -444,6 +448,7 @@ export default function Purchases() {
   const rows = useMemo(() =>
     visiblePurchases.map((p) => ({
       id: p.id,
+      poNumber: <span className="font-mono">{p.poNumber}</span>,
       invoice:  <span className="font-mono">{p.invoiceNo}</span>,
       date:     p.purchaseDate,
       supplier: [p.supplierName, p.supplierContactName].filter(Boolean).join(' · '),
@@ -454,7 +459,7 @@ export default function Purchases() {
         <div className="flex gap-1">
           <Button variant="ghost" size="sm" icon={Eye} onClick={() => { setViewing(p); setViewOpen(true); }} />
           <Button variant="ghost" size="sm" icon={Pencil} onClick={() => openEdit(p)}>Edit</Button>
-          <Button variant="ghost" size="sm" icon={Download} title="Download purchase PDF" aria-label={`Download ${p.invoiceNo} as PDF`} onClick={() => handleExportPurchase(p)} />
+          <Button variant="ghost" size="sm" icon={Download} title="Download purchase PDF" aria-label={`Download ${p.poNumber} as PDF`} onClick={() => handleExportPurchase(p)} />
           <Button variant="dangerGhost" size="sm" icon={Trash2} onClick={() => setDeleteTarget(p)} />
         </div>
       ),
@@ -481,7 +486,7 @@ export default function Purchases() {
               placeholder={['From date', 'To date']}
               allowClear
             />
-            <SearchBox placeholder="Search invoice, supplier…" value={search} onChange={(e) => { setSearch(e.target.value); setCurrentPage(1); }} />
+            <SearchBox placeholder="Search PO, invoice, supplier…" value={search} onChange={(e) => { setSearch(e.target.value); setCurrentPage(1); }} />
           </>
         }
         right={
@@ -521,7 +526,7 @@ export default function Purchases() {
       <AppModal
         open={modalOpen}
         title={editing ? 'Edit Purchase' : 'New Purchase Order'}
-        subtitle={editing ? `Editing: ${editing.invoiceNo}` : 'Create a new purchase order from supplier'}
+        subtitle={editing ? `Editing: ${editing.poNumber}` : 'Create a new purchase order from supplier'}
         onClose={() => { setModalOpen(false); form.resetFields(); }}
         onConfirm={handleSubmit}
         confirmText={editing ? 'Save Changes' : 'Create Purchase'}
@@ -530,6 +535,9 @@ export default function Purchases() {
       >
         <Form form={form} layout="vertical">
           <div className="grid grid-cols-2 gap-x-4">
+            <Form.Item name="poNumber" label="PO Number" rules={[{ required: true, whitespace: true, message: 'Required' }]}>
+              <Input readOnly placeholder="PO-17784963" />
+            </Form.Item>
             <Form.Item name="invoiceNo" label="Invoice Number" rules={[{ required: true, whitespace: true, message: 'Required' }]}>
               <Input placeholder="INV-1001" />
             </Form.Item>
@@ -775,8 +783,8 @@ export default function Purchases() {
       {/* ── View Modal ── */}
       <AppModal
         open={viewOpen}
-        title={`Purchase Order — ${viewing?.invoiceNo}`}
-        subtitle={`${[viewing?.supplierName, viewing?.supplierContactName].filter(Boolean).join(' · ')} · ${viewing?.purchaseDate}`}
+        title={`Purchase Order — ${viewing?.poNumber}`}
+        subtitle={`Invoice: ${viewing?.invoiceNo} · ${[viewing?.supplierName, viewing?.supplierContactName].filter(Boolean).join(' · ')} · ${viewing?.purchaseDate}`}
         onClose={() => setViewOpen(false)}
         onConfirm={() => setViewOpen(false)}
         confirmText="Close"
@@ -828,7 +836,7 @@ export default function Purchases() {
       {/* ── Delete Confirm ── */}
       <ConfirmDialog
         open={!!deleteTarget}
-        title={`Delete "${deleteTarget?.invoiceNo}"?`}
+        title={`Delete "${deleteTarget?.poNumber}"?`}
         description="This purchase order will be permanently removed."
         onCancel={() => setDeleteTarget(null)}
         onConfirm={handleDelete}
