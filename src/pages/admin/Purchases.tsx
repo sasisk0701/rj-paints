@@ -14,6 +14,7 @@ import { Badge } from '@/components/common/Badge';
 import { AppModal } from '@/components/common/AppModal';
 import { ConfirmDialog } from '@/components/common/ConfirmDialog';
 import type { KpiItem, TableColumn, Tone } from '@/types/types';
+import { formatUtcDateTime } from '@/utils/dateFormat';
 import { exportPurchasesToPdf } from '@/utils/transactionPdfExport';
 
 const COLUMNS: TableColumn[] = [
@@ -315,6 +316,11 @@ export default function Purchases() {
           const inBillDiscount2Amount = item.rebateDiscountType === 'amount' ? Number(item.rebateDiscountValue ?? 0) : 0;
           const cashDiscountPercent = item.cardDiscountType === 'percent' ? Number(item.cardDiscountValue ?? 0) : 0;
           const cashDiscountAmount = item.cardDiscountType === 'amount' ? Number(item.cardDiscountValue ?? 0) : 0;
+          const enteredProductVolume = item.volume !== undefined &&
+            item.volume !== null &&
+            item.volume !== ''
+            ? `${Number(item.volume)} ${item.volumeUnit || 'kg'}`
+            : '';
           return {
             productId: item.productId === NEW_PRODUCT_VALUE ? undefined : item.productId,
             productName: prod?.name ?? item.newProduct?.name ?? '',
@@ -347,7 +353,9 @@ export default function Purchases() {
                 brand: item.newProduct.brand || prod?.brand || '',
                 color: item.newProduct.color || prod?.color || '',
                 sellingPrice: Number(item.newProduct.sellingPrice ?? prod?.sellingPrice ?? 0),
-                unit: item.newProduct.unit || prod?.unit || item.volume || 'Piece',
+                unit: item.productId === NEW_PRODUCT_VALUE && enteredProductVolume
+                  ? enteredProductVolume
+                  : item.newProduct.unit || prod?.unit || 'Piece',
                 minStock: Number(item.newProduct.minStock ?? prod?.minStock ?? 0),
               },
             } : {}),
@@ -450,7 +458,7 @@ export default function Purchases() {
       id: p.id,
       poNumber: <span className="font-mono">{p.poNumber}</span>,
       invoice:  <span className="font-mono">{p.invoiceNo}</span>,
-      date:     p.purchaseDate,
+      date:     formatUtcDateTime(p.purchaseDate),
       supplier: [p.supplierName, p.supplierContactName].filter(Boolean).join(' · '),
       items:    `${p.items?.length ?? '—'} item(s)`,
       amount:   `₹${p.totalAmount.toLocaleString('en-IN')}`,
@@ -784,7 +792,7 @@ export default function Purchases() {
       <AppModal
         open={viewOpen}
         title={`Purchase Order — ${viewing?.poNumber}`}
-        subtitle={`Invoice: ${viewing?.invoiceNo} · ${[viewing?.supplierName, viewing?.supplierContactName].filter(Boolean).join(' · ')} · ${viewing?.purchaseDate}`}
+        subtitle={`Invoice: ${viewing?.invoiceNo} · ${[viewing?.supplierName, viewing?.supplierContactName].filter(Boolean).join(' · ')} · ${viewing ? formatUtcDateTime(viewing.purchaseDate) : ''}`}
         onClose={() => setViewOpen(false)}
         onConfirm={() => setViewOpen(false)}
         confirmText="Close"
