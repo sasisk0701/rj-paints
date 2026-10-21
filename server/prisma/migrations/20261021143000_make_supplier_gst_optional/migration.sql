@@ -1,0 +1,1 @@
+ALTER TABLE `Supplier` MODIFY `gstNumber` VARCHAR(191) NULL;

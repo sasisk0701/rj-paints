@@ -63,7 +63,7 @@ export default function Suppliers() {
   const openEdit = (s: ApiSupplier) => {
     setEditing(s);
     form.setFieldsValue({
-      name: s.name, contactName: s.contactName ?? '', gstNumber: s.gstNumber, phone: s.phone,
+      name: s.name, contactName: s.contactName ?? '', gstNumber: s.gstNumber ?? '', phone: s.phone,
       email: s.email ?? '', address: s.address ?? '', city: s.city,
       business: s.business, outstandingBalance: s.outstandingBalance,
       notes: s.notes ?? '',
@@ -75,11 +75,15 @@ export default function Suppliers() {
     try {
       const values = await form.validateFields();
       setSaving(true);
+      const payload = {
+        ...values,
+        gstNumber: String(values.gstNumber ?? '').trim() || null,
+      };
       if (editing) {
-        await supplierService.update(editing.id, values);
+        await supplierService.update(editing.id, payload);
         message.success('Supplier updated');
       } else {
-        await supplierService.create(values);
+        await supplierService.create(payload);
         message.success('Supplier added');
       }
       setModalOpen(false);
@@ -112,7 +116,7 @@ export default function Suppliers() {
     if (!suppliers.length) { message.warning('No suppliers to export'); return; }
     const header = 'Supplier,Supplier Name,Phone,Email,City,GST Number,Outstanding,Business\n';
     const csv = suppliers.map((s) =>
-      `"${s.name}","${s.contactName ?? ''}","${s.phone}","${s.email ?? ''}","${s.city}","${s.gstNumber}",${s.outstandingBalance},"${s.business}"`
+      `"${s.name}","${s.contactName ?? ''}","${s.phone}","${s.email ?? ''}","${s.city}","${s.gstNumber ?? ''}",${s.outstandingBalance},"${s.business}"`
     ).join('\n');
     const blob = new Blob([header + csv], { type: 'text/csv' });
     const url  = URL.createObjectURL(blob);
@@ -148,7 +152,7 @@ export default function Suppliers() {
       ),
       phone:       s.phone,
       city:        s.city,
-      gst:         <span className="font-mono text-ink-3 text-[11.5px]">{s.gstNumber}</span>,
+      gst:         <span className="font-mono text-ink-3 text-[11.5px]">{s.gstNumber || '—'}</span>,
       outstanding: (
         <span className={s.outstandingBalance > 0 ? 'font-bold text-danger' : 'text-success font-semibold'}>
           ₹{s.outstandingBalance.toLocaleString('en-IN')}
@@ -223,7 +227,7 @@ export default function Suppliers() {
               <Input placeholder="Anbu" />
             </Form.Item>
 
-            <Form.Item name="gstNumber" label="GST Number" rules={[{ required: true, message: 'Required' }]}>
+            <Form.Item name="gstNumber" label="GST Number">
               <Input placeholder="33AAAA0000A1Z5" />
             </Form.Item>
 

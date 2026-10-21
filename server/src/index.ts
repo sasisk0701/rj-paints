@@ -900,13 +900,16 @@ app.get('/api/suppliers/:id', authenticateJWT, async (req, res) => {
 
 app.post('/api/suppliers', authenticateJWT, async (req: AuthRequest, res) => {
   const { name, contactName, gstNumber, phone, email, address, city, business, outstandingBalance, notes } = req.body;
-  if (!name || !gstNumber || !phone || !city)
-    return res.status(400).json({ error: 'name, gstNumber, phone and city are required' });
-  const exists = await prisma.supplier.findFirst({ where: { gstNumber } });
-  if (exists) return res.status(409).json({ error: 'GST number already registered' });
+  const normalizedGstNumber = String(gstNumber ?? '').trim() || null;
+  if (!name || !phone || !city)
+    return res.status(400).json({ error: 'name, phone and city are required' });
+  if (normalizedGstNumber) {
+    const exists = await prisma.supplier.findFirst({ where: { gstNumber: normalizedGstNumber } });
+    if (exists) return res.status(409).json({ error: 'GST number already registered' });
+  }
   const supplier = await prisma.supplier.create({
     data: {
-      name, contactName: contactName || null, gstNumber, phone, email, address, city,
+      name, contactName: contactName || null, gstNumber: normalizedGstNumber, phone, email, address, city,
       business: (business || 'PAINTS').toUpperCase() as any,
       outstandingBalance: +(outstandingBalance || 0),
       notes,
@@ -920,10 +923,19 @@ app.post('/api/suppliers', authenticateJWT, async (req: AuthRequest, res) => {
 
 app.put('/api/suppliers/:id', authenticateJWT, async (req: AuthRequest, res) => {
   const { name, contactName, gstNumber, phone, email, address, city, business, outstandingBalance, notes } = req.body;
+  const normalizedGstNumber = gstNumber === undefined
+    ? undefined
+    : String(gstNumber ?? '').trim() || null;
+  if (normalizedGstNumber) {
+    const exists = await prisma.supplier.findFirst({
+      where: { gstNumber: normalizedGstNumber, id: { not: req.params.id } },
+    });
+    if (exists) return res.status(409).json({ error: 'GST number already registered' });
+  }
   const supplier = await prisma.supplier.update({
     where: { id: req.params.id },
     data: {
-      name, contactName: contactName || null, gstNumber, phone, email, address, city,
+      name, contactName: contactName || null, gstNumber: normalizedGstNumber, phone, email, address, city,
       business: business ? business.toUpperCase() as any : undefined,
       outstandingBalance: outstandingBalance !== undefined ? +outstandingBalance : undefined,
       notes,
@@ -1847,9 +1859,11 @@ app.get('/api/purchases', authenticateJWT, async (req, res) => {
 
 app.post('/api/purchases', authenticateJWT, async (req: AuthRequest, res) => {
   const { poNumber, invoiceNo, supplierId, supplierName, supplierContactName, purchaseDate, paymentMode, hsn, status, received, notes, business, items } = req.body;
-  if (!String(poNumber ?? '').trim() || !String(invoiceNo ?? '').trim() || !supplierName || !purchaseDate || !paymentMode || !Array.isArray(items) || !items.length)
-    return res.status(400).json({ error: 'poNumber, invoiceNo, supplierName, purchaseDate, paymentMode and items are required' });
+  if (!String(poNumber ?? '').trim() || !supplierName || !purchaseDate || !paymentMode || !Array.isArray(items) || !items.length)
+    return res.status(400).json({ error: 'poNumber, supplierName, purchaseDate, paymentMode and items are required' });
   try {
+    const normalizedPoNumber = String(poNumber).trim();
+    const normalizedInvoiceNo = String(invoiceNo ?? '').trim() || `NO-INVOICE-${normalizedPoNumber}`;
     const isReceived = received !== false;
     const purchaseBusiness = (business || 'PAINTS').toUpperCase() as any;
     const purchase = await prisma.$transaction(async (tx) => {
@@ -1949,8 +1963,8 @@ app.post('/api/purchases', authenticateJWT, async (req: AuthRequest, res) => {
 
       const created = await tx.purchase.create({
         data: {
-          poNumber: String(poNumber).trim(),
-          invoiceNo: String(invoiceNo).trim(), supplierName,
+          poNumber: normalizedPoNumber,
+          invoiceNo: normalizedInvoiceNo, supplierName,
           supplierId: supplierId || null,
           supplierContactName: supplierContactName || null,
           purchaseDate: new Date(purchaseDate),
@@ -1974,7 +1988,7 @@ app.post('/api/purchases', authenticateJWT, async (req: AuthRequest, res) => {
       }
       return created;
     });
-    await prisma.activityLog.create({ data: { userId: req.user.id, userName: req.user.name, action: 'Purchase Created', module: 'Trade', reference: invoiceNo, business: purchaseBusiness.toLowerCase() } });
+    await prisma.activityLog.create({ data: { userId: req.user.id, userName: req.user.name, action: 'Purchase Created', module: 'Trade', reference: normalizedInvoiceNo, business: purchaseBusiness.toLowerCase() } });
     res.status(201).json(purchase);
   } catch (err: any) {
     if (err?.code === 'P2002') return res.status(409).json({ error: 'PO number or invoice number already exists' });
@@ -1986,9 +2000,6 @@ app.put('/api/purchases/:id', authenticateJWT, async (req: AuthRequest, res) => 
   const { poNumber, invoiceNo, supplierId, supplierName, supplierContactName, purchaseDate, paymentMode, hsn, status, received, notes, items } = req.body;
   if (poNumber !== undefined && !String(poNumber ?? '').trim()) {
     return res.status(400).json({ error: 'poNumber cannot be empty' });
-  }
-  if (invoiceNo !== undefined && !String(invoiceNo ?? '').trim()) {
-    return res.status(400).json({ error: 'invoiceNo cannot be empty' });
   }
   try {
     let subtotal = 0, gstAmount = 0, totalAmount = 0;
@@ -2063,7 +2074,9 @@ app.put('/api/purchases/:id', authenticateJWT, async (req: AuthRequest, res) => 
           supplier: supplierId ? { connect: { id: supplierId } } : { disconnect: true },
           supplierName, paymentMode, status,
           poNumber: poNumber === undefined ? undefined : String(poNumber).trim(),
-          invoiceNo: invoiceNo === undefined ? undefined : String(invoiceNo).trim(),
+          invoiceNo: invoiceNo === undefined
+            ? undefined
+            : String(invoiceNo ?? '').trim() || `NO-INVOICE-${String(poNumber ?? existing.poNumber).trim()}`,
           supplierContactName: supplierContactName || null,
           hsn: hsn ?? undefined,
           received: received ?? undefined,

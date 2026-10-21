@@ -237,7 +237,7 @@ export const productService = {
 
 // ─── Suppliers (API-backed) ───────────────────────────────────────────────
 export interface ApiSupplier {
-  id: string; name: string; gstNumber: string; phone: string;
+  id: string; name: string; gstNumber: string | null; phone: string;
   contactName: string | null;
   email: string | null; address: string | null; city: string;
   business: string; outstandingBalance: number; notes: string | null;

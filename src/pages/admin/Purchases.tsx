@@ -546,7 +546,7 @@ export default function Purchases() {
             <Form.Item name="poNumber" label="PO Number" rules={[{ required: true, whitespace: true, message: 'Required' }]}>
               <Input readOnly placeholder="PO-17784963" />
             </Form.Item>
-            <Form.Item name="invoiceNo" label="Invoice Number" rules={[{ required: true, whitespace: true, message: 'Required' }]}>
+            <Form.Item name="invoiceNo" label="Invoice Number">
               <Input placeholder="INV-1001" />
             </Form.Item>
             <Form.Item name="supplierId" hidden>
@@ -622,19 +622,7 @@ export default function Purchases() {
           <Form.List name="items" rules={[{ validator: async (_, items) => { if (!items?.length) throw new Error('Add at least one item'); } }]}>
             {(fields, { add, remove }) => (
               <div className="space-y-3 mt-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold uppercase tracking-widest text-ink-3">Items</span>
-                  <Button type="button" variant="ghost" size="sm" icon={Plus} onClick={() => add({
-                    productId: '', productName: '', quantity: 1, packs: 0, volume: undefined, volumeUnit: 'kg', legacyVolume: '', purchasePrice: 0, hsn: '',
-                    newProduct: { sellingPrice: 0, minStock: 0 },
-                    inBillDiscountValue: 0, inBillDiscountType: 'amount',
-                    rebateDiscountValue: 0, rebateDiscountType: 'amount',
-                    cardDiscountValue: 0, cardDiscountType: 'amount',
-                    gstRate: 18,
-                  })}>
-                    Add Item
-                  </Button>
-                </div>
+                <span className="text-xs font-bold uppercase tracking-widest text-ink-3">Items</span>
                 {fields.map((field) => (
                   <div key={field.key} className="grid grid-cols-12 gap-3 items-end rounded-2xl border border-border bg-surface-2 p-4">
                     <Form.Item name={[field.name, 'productId']} hidden>
@@ -777,11 +765,23 @@ export default function Purchases() {
                     <Form.Item name={[field.name, 'gstRate']} label="GST %" className="col-span-3 md:col-span-2">
                       <InputNumber min={0} max={28} className="w-full" />
                     </Form.Item>
-                    <div className="col-span-3 md:col-span-1 flex items-end justify-center pb-6">
+                    <div className="col-span-12 flex justify-end border-t border-border pt-3">
                       <Button type="button" variant="dangerGhost" size="sm" icon={Trash2} onClick={() => remove(field.name)} disabled={fields.length === 1} />
                     </div>
                   </div>
                 ))}
+                <div className="flex justify-end">
+                  <Button type="button" variant="ghost" size="sm" icon={Plus} onClick={() => add({
+                    productId: '', productName: '', quantity: 1, packs: 0, volume: undefined, volumeUnit: 'kg', legacyVolume: '', purchasePrice: 0, hsn: '',
+                    newProduct: { sellingPrice: 0, minStock: 0 },
+                    inBillDiscountValue: 0, inBillDiscountType: 'amount',
+                    rebateDiscountValue: 0, rebateDiscountType: 'amount',
+                    cardDiscountValue: 0, cardDiscountType: 'amount',
+                    gstRate: 18,
+                  })}>
+                    Add Item
+                  </Button>
+                </div>
               </div>
             )}
           </Form.List>
