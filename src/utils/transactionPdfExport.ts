@@ -399,6 +399,7 @@ export function exportProductsToPdf(
   });
 
   const columns = [
+    'S.No',
     'Product',
     'Category',
     'HSN Code',
@@ -444,8 +445,9 @@ export function exportProductsToPdf(
     autoTable(doc, {
       head: [columns],
 
-      body: pageProducts.map((product) =>
+      body: pageProducts.map((product, productIndex) =>
         [
+          String(index * PRODUCT_ROWS_PER_PAGE + productIndex + 1),
           product.name,
           product.categoryName,
           product.hsn ?? '',
@@ -677,6 +679,7 @@ function drawPurchaseInvoicePage(
   doc.text(ascii(`GSTIN: ${COMPANY_DETAILS.gstNumber}`), shipToX, 78);
 
   const headers = [
+    'S.No',
     'Material\nHSN',
     'Description',
     'Qty',
@@ -697,7 +700,7 @@ function drawPurchaseInvoicePage(
     body: pageItems.map((cells) => cells.map(ascii)),
     startY: 89,
     margin: { left: 11, right: 11, bottom: 22 },
-    tableWidth: 388,
+    tableWidth: 398,
 
     styles: {
       font: 'helvetica',
@@ -720,19 +723,20 @@ function drawPurchaseInvoicePage(
     },
 
     columnStyles: {
-      0: { cellWidth: 54, halign: 'left' },
-      1: { cellWidth: 52, halign: 'left' },
-      2: { cellWidth: 14, halign: 'right' },
-      3: { cellWidth: 18, halign: 'center' },
-      4: { cellWidth: 25, halign: 'right' },
-      5: { cellWidth: 30, halign: 'right' },
-      6: { cellWidth: 26, halign: 'right' },
+      0: { cellWidth: 10, halign: 'center' },
+      1: { cellWidth: 54, halign: 'left' },
+      2: { cellWidth: 52, halign: 'left' },
+      3: { cellWidth: 14, halign: 'right' },
+      4: { cellWidth: 18, halign: 'center' },
+      5: { cellWidth: 25, halign: 'right' },
+      6: { cellWidth: 30, halign: 'right' },
       7: { cellWidth: 26, halign: 'right' },
       8: { cellWidth: 26, halign: 'right' },
       9: { cellWidth: 26, halign: 'right' },
-      10: { cellWidth: 32, halign: 'right' },
-      11: { cellWidth: 29, halign: 'right' },
-      12: { cellWidth: 30, halign: 'right' },
+      10: { cellWidth: 26, halign: 'right' },
+      11: { cellWidth: 32, halign: 'right' },
+      12: { cellWidth: 29, halign: 'right' },
+      13: { cellWidth: 30, halign: 'right' },
     },
 
     rowPageBreak: 'avoid',
@@ -778,7 +782,7 @@ export function exportPurchasesToPdf(
   const prepared = purchases.map((purchase) => {
     const categories = new Set<string>();
 
-    const items = (purchase.items ?? []).map((item) => {
+    const items = (purchase.items ?? []).map((item, itemIndex) => {
       const quantity = Number(item.quantity) || 0;
       const rate = Number(item.purchasePrice) || 0;
 
@@ -858,6 +862,7 @@ export function exportPurchasesToPdf(
       // One product = one table row.
       // Newline characters create vertical details inside each cell.
       const itemRow = [
+        String(itemIndex + 1),
         // Material and HSN
         `${item.productName}\nHSN - ${item.hsn || '-'}`,
 
@@ -918,10 +923,10 @@ export function exportPurchasesToPdf(
       : [
           {
             rows: [
-              Array(13)
+              Array(14)
                 .fill('')
                 .map((_, index) =>
-                  index === 1 ? 'No items' : ''
+                  index === 2 ? 'No items' : ''
                 ),
             ],
           },

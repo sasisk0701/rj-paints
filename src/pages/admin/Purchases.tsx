@@ -18,6 +18,7 @@ import { formatUtcDateTime } from '@/utils/dateFormat';
 import { exportPurchasesToPdf } from '@/utils/transactionPdfExport';
 
 const COLUMNS: TableColumn[] = [
+  { key: 'serialNumber', label: 'S.No', align: 'center' },
   { key: 'poNumber', label: 'PO #' },
   { key: 'invoice',  label: 'Invoice #' },
   { key: 'date',     label: 'Date' },
@@ -454,8 +455,9 @@ export default function Purchases() {
   }, [purchases]);
 
   const rows = useMemo(() =>
-    visiblePurchases.map((p) => ({
+    visiblePurchases.map((p, index) => ({
       id: p.id,
+      serialNumber: (currentPage - 1) * 10 + index + 1,
       poNumber: <span className="font-mono">{p.poNumber}</span>,
       invoice:  <span className="font-mono">{p.invoiceNo}</span>,
       date:     formatUtcDateTime(p.purchaseDate),
@@ -472,7 +474,7 @@ export default function Purchases() {
         </div>
       ),
     })),
-  [visiblePurchases, handleExportPurchase]);
+  [visiblePurchases, currentPage, handleExportPurchase]);
 
   return (
     <div>

@@ -14,6 +14,7 @@ import type { KpiItem, TableColumn, Tone } from '@/types/types';
 import { exportSalesToPdf } from '@/utils/transactionPdfExport';
 
 const COLUMNS: TableColumn[] = [
+  { key: 'serialNumber', label: 'S.No', align: 'center' },
   { key: 'invoice',  label: 'Invoice #' },
   { key: 'date',     label: 'Date' },
   { key: 'customer', label: 'Customer' },
@@ -207,8 +208,9 @@ export default function Sales() {
   }, [sales]);
 
   const rows = useMemo(() =>
-    sales.map((s) => ({
+    sales.map((s, index) => ({
       id: s.id,
+      serialNumber: index + 1,
       invoice:  <span className="font-mono">{s.invoiceNumber}</span>,
       date:     s.saleDate,
       customer: s.customerName,
@@ -344,9 +346,6 @@ export default function Sales() {
               <div className="space-y-3 mt-2">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-bold uppercase tracking-widest text-ink-3">Items</span>
-                  <Button type="button" variant="ghost" size="sm" icon={Plus} onClick={() => add({ productId: '', hsn: '', quantity: 1, sellingPrice: 0, discount: 0, gstRate: 18 })}>
-                    Add Item
-                  </Button>
                 </div>
                 {fields.map((field) => (
                   <div key={field.key} className="grid grid-cols-12 gap-3 items-end rounded-2xl border border-border bg-surface-2 p-4">
@@ -380,11 +379,16 @@ export default function Sales() {
                     <Form.Item name={[field.name, 'gstRate']} label="GST %" className="col-span-3 md:col-span-1">
                       <InputNumber min={0} max={28} className="w-full" />
                     </Form.Item>
-                    <div className="col-span-3 md:col-span-1 flex justify-end">
+                    <div className="col-span-12 flex justify-end border-t border-border pt-3">
                       <Button type="button" variant="dangerGhost" size="sm" icon={Trash2} onClick={() => remove(field.name)} disabled={fields.length === 1} />
                     </div>
                   </div>
                 ))}
+                <div className="flex justify-end">
+                  <Button type="button" variant="ghost" size="sm" icon={Plus} onClick={() => add({ productId: '', hsn: '', quantity: 1, sellingPrice: 0, discount: 0, gstRate: 18 })}>
+                    Add Item
+                  </Button>
+                </div>
               </div>
             )}
           </Form.List>

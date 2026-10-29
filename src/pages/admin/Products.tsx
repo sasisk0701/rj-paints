@@ -33,6 +33,7 @@ import { parseProductVolume } from '@/utils/productVolume';
 import { exportProductsToPdf } from '@/utils/transactionPdfExport';
 
 const COLUMNS: TableColumn[] = [
+  { key: 'serialNumber', label: 'S.No', align: 'center' },
   { key: 'image', label: 'Image' },
   { key: 'product', label: 'Product', align: 'center' },
   { key: 'category', label: 'Category', align: 'center' },
@@ -445,8 +446,9 @@ export default function Products() {
 
   const rows = useMemo(
     () =>
-      visibleProducts.map((product) => ({
+      visibleProducts.map((product, index) => ({
         id: product.id,
+        serialNumber: (currentPage - 1) * 10 + index + 1,
 
         image: product.image ? (
           <img
@@ -544,7 +546,7 @@ export default function Products() {
           </div>
         ),
       })),
-    [visibleProducts]
+    [visibleProducts, currentPage]
   );
 
   return (
