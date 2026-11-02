@@ -119,6 +119,7 @@ export default function Products() {
 
   const [currentPage, setCurrentPage] = useState(1);
   const [modalOpen, setModalOpen] = useState(false);
+  const [nextSerialNumber, setNextSerialNumber] = useState(1);
   const [deleteTarget, setDeleteTarget] = useState<ApiProduct | null>(null);
   const [purchaseHistoryProduct, setPurchaseHistoryProduct] =
     useState<ApiProduct | null>(null);
@@ -177,7 +178,16 @@ export default function Products() {
     resetImageState();
   };
 
-  const openAdd = () => {
+  const openAdd = async () => {
+    let serialNumber: number;
+    try {
+      serialNumber = (await apiProductService.getAll({ business: toggle })).length + 1;
+    } catch {
+      message.error('Failed to determine the next product S.No');
+      return;
+    }
+
+    setNextSerialNumber(serialNumber);
     setEditing(null);
     form.resetFields();
 
@@ -768,6 +778,9 @@ export default function Products() {
       >
         <Form form={form} layout="vertical">
           <div className="grid grid-cols-2 gap-x-4">
+            <Form.Item label="S.No">
+              <Input value={nextSerialNumber} readOnly />
+            </Form.Item>
             <Form.Item
               name="name"
               label="Product Name"

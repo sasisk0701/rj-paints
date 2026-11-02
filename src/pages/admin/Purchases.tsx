@@ -162,6 +162,7 @@ export default function Purchases() {
   const [dateRange, setDateRange]       = useState<[Dayjs | null, Dayjs | null] | null>(null);
   const [currentPage, setCurrentPage]   = useState(1);
   const [modalOpen, setModalOpen]       = useState(false);
+  const [nextSerialNumber, setNextSerialNumber] = useState(1);
   const [viewOpen, setViewOpen]         = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<ApiPurchase | null>(null);
   const [editing, setEditing]           = useState<ApiPurchase | null>(null);
@@ -214,7 +215,16 @@ export default function Purchases() {
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
 
-  const openAdd = () => {
+  const openAdd = async () => {
+    let serialNumber: number;
+    try {
+      serialNumber = (await purchaseService.getAll({ business: toggle })).length + 1;
+    } catch {
+      message.error('Failed to determine the next purchase S.No');
+      return;
+    }
+
+    setNextSerialNumber(serialNumber);
     setEditing(null);
     form.resetFields();
     form.setFieldsValue({
@@ -545,6 +555,9 @@ export default function Purchases() {
       >
         <Form form={form} layout="vertical">
           <div className="grid grid-cols-2 gap-x-4">
+            <Form.Item label="S.No">
+              <Input value={nextSerialNumber} readOnly />
+            </Form.Item>
             <Form.Item name="poNumber" label="PO Number" rules={[{ required: true, whitespace: true, message: 'Required' }]}>
               <Input readOnly placeholder="PO-17784963" />
             </Form.Item>

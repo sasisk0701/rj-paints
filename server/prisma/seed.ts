@@ -12,6 +12,38 @@ async function main() {
     create: { email: 'rjpaintsandhardwares@gmail.com', name: 'S. Madasamy', password: hashedPassword, role: 'ADMIN' },
   });
 
+  const additionalAdmins = [
+    {
+      email: process.env.ADMIN_2_EMAIL,
+      password: process.env.ADMIN_2_PASSWORD,
+      name: 'RJ Paints Admin',
+    },
+    {
+      email: process.env.ADMIN_3_EMAIL,
+      password: process.env.ADMIN_3_PASSWORD,
+      name: 'RJ Interiors Admin',
+    },
+  ];
+
+  for (const admin of additionalAdmins) {
+    if (!admin.email && !admin.password) continue;
+    if (!admin.email || !admin.password) {
+      throw new Error('Both email and password must be set for each additional admin');
+    }
+
+    const hashedAdminPassword = await bcrypt.hash(admin.password, 10);
+    await prisma.adminUser.upsert({
+      where: { email: admin.email },
+      update: { password: hashedAdminPassword, name: admin.name },
+      create: {
+        email: admin.email,
+        name: admin.name,
+        password: hashedAdminPassword,
+        role: 'ADMIN',
+      },
+    });
+  }
+
   // Settings
   const settings = [
     { key: 'paints_company_name',    value: 'RJ Paints & Hardwares' },

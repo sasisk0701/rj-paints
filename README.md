@@ -37,7 +37,7 @@ Enterprise-grade, dual-business web platform for **RJ Paints & Hardwares** (Asia
 - **Instant Inquiry Modal**: Forwards quotes directly to proprietor S. Madasamy via WhatsApp (`9488475040`).
 
 ### 4. Admin Management Dashboard
-- **Protected Routes & JWT Auth**: Single Admin account (`rjpaintsandhardwares@gmail.com` / `Admin@123`).
+- **Protected Routes & JWT Auth**: Admin accounts are stored in the backend database and passwords are hashed with bcrypt.
 - **Dashboard Overview**: Metrics for Available Stock Value, Today's & Monthly Sales, Profit & Loss, Bank Balance, Low Stock Alerts, and Recharts analytics.
 - **Products Inventory**: Full Ant Design CRUD table with SKU/Barcode generator and minimum stock alert tags.
 - **Suppliers Master**: Supplier contacts, GSTIN numbers, address, and outstanding balance trackers.
@@ -89,11 +89,14 @@ Visit `http://localhost:3000` for the frontend and `http://localhost:5000` for t
 
 ---
 
-## 🔐 Admin Credentials
+## 🔐 Admin Accounts
 
-- **Email**: `rjpaintsandhardwares@gmail.com`
-- **Password**: `Admin@123`
-- **Portal Link**: Navigate to `/login` or click "Admin Portal" in the header/footer.
+The seed creates the primary admin account. To provision up to two additional admins,
+set `ADMIN_2_EMAIL` and `ADMIN_2_PASSWORD` and/or `ADMIN_3_EMAIL` and
+`ADMIN_3_PASSWORD` in the private `server/.env` file, then run `npm run prisma:seed`
+from the `server` directory. The seed hashes each password before storing it.
+Never commit real credentials or add them to frontend configuration.
+Navigate to `/login` or click "Admin Portal" in the header/footer to sign in.
 
 ---
 

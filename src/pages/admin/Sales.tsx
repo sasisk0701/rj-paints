@@ -43,6 +43,7 @@ export default function Sales() {
   const [statusFilter, setStatusFilter] = useState('');
   const [gstModeFilter, setGstModeFilter] = useState<ApiSale['gstMode'] | ''>('');
   const [modalOpen, setModalOpen]       = useState(false);
+  const [nextSerialNumber, setNextSerialNumber] = useState(1);
   const [viewOpen, setViewOpen]         = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<ApiSale | null>(null);
   const [editing, setEditing]           = useState<ApiSale | null>(null);
@@ -77,7 +78,16 @@ export default function Sales() {
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
 
-  const openAdd = () => {
+  const openAdd = async () => {
+    let serialNumber: number;
+    try {
+      serialNumber = (await saleService.getAll({ business: toggle })).length + 1;
+    } catch {
+      message.error('Failed to determine the next sale S.No');
+      return;
+    }
+
+    setNextSerialNumber(serialNumber);
     setEditing(null);
     form.resetFields();
     form.setFieldsValue({
@@ -287,6 +297,9 @@ export default function Sales() {
       >
         <Form form={form} layout="vertical">
           <div className="grid grid-cols-2 gap-x-4">
+            <Form.Item label="S.No">
+              <Input value={nextSerialNumber} readOnly />
+            </Form.Item>
             <Form.Item name="invoiceNumber" label="Invoice Number" rules={[{ required: true, message: 'Required' }]}>
               <Input placeholder="SO-1001" />
             </Form.Item>
